@@ -193,7 +193,11 @@ function flash(t){ const s=document.getElementById('status'); s.textContent=t; s
 async function createCustomer(input){
   const now=new Date().toISOString();
   const c={ id:uid(), name:input.name, phone:input.phone||null, email:input.email||null, address:input.address||null,
-    postalCode:input.postalCode||null, city:input.city||null, saveAsContact:!!input.saveAsContact, createdAt:now, updatedAt:now };
+    postalCode:input.postalCode||null, city:input.city||null, saveAsContact:!!input.saveAsContact,
+    isCompany:!!input.isCompany, orgNumber:input.orgNumber||null, invoiceAddress:input.invoiceAddress||null,
+    invoicePostalCode:input.invoicePostalCode||null, invoiceCity:input.invoiceCity||null,
+    invoiceReference:input.invoiceReference||null, glnNumber:input.glnNumber||null,
+    createdAt:now, updatedAt:now };
   await dbPut('customers',c); customers.push(c); return c;
 }
 function deriveStatus(plannedAt){
@@ -260,7 +264,8 @@ const $app = document.getElementById('app');
 
 function emptyDraft(){
   return { kind:null, method:null, existingCustomerId:null,
-    newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true},
+    newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true,
+      isCompany:false,orgNumber:'',invoiceAddress:'',invoicePostalCode:'',invoiceCity:'',invoiceReference:'',glnNumber:''},
     title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal' };
 }
 function draftPlannedAt(){
@@ -458,6 +463,20 @@ function vStepCustomer(){
       <div><span class="label">Postnummer</span><input type="text" placeholder="123 45" value="${esc(draft.newCustomer.postalCode)}" data-field="nc.postalCode"></div>
       <div><span class="label">Ort</span><input type="text" placeholder="Ort" value="${esc(draft.newCustomer.city)}" data-field="nc.city"></div>
     </div>
+    <div class="card switch-row" style="margin-bottom:16px">
+      <span>Företag</span>
+      <button class="switch ${draft.newCustomer.isCompany?'on':''}" data-act="toggle-company"><div class="knob"></div></button>
+    </div>
+    ${draft.newCustomer.isCompany?`
+    <div class="field"><span class="label">Organisationsnummer</span><input type="text" inputmode="numeric" placeholder="XXXXXX-XXXX" value="${esc(draft.newCustomer.orgNumber)}" data-field="nc.orgNumber"></div>
+    <div class="field"><span class="label">Fakturaadress</span><input type="text" placeholder="Om annan än besöksadressen" value="${esc(draft.newCustomer.invoiceAddress)}" data-field="nc.invoiceAddress"></div>
+    <div class="field field-row">
+      <div><span class="label">Postnummer (faktura)</span><input type="text" placeholder="123 45" value="${esc(draft.newCustomer.invoicePostalCode)}" data-field="nc.invoicePostalCode"></div>
+      <div><span class="label">Ort (faktura)</span><input type="text" placeholder="Ort" value="${esc(draft.newCustomer.invoiceCity)}" data-field="nc.invoiceCity"></div>
+    </div>
+    <div class="field"><span class="label">Er referens</span><input type="text" placeholder="Namn eller kod på fakturan" value="${esc(draft.newCustomer.invoiceReference)}" data-field="nc.invoiceReference"></div>
+    <div class="field"><span class="label">E-fakturaadress / GLN-nummer</span><input type="text" placeholder="Om kunden kräver e-faktura" value="${esc(draft.newCustomer.glnNumber)}" data-field="nc.glnNumber"></div>
+    `:''}
     <div class="card switch-row">
       <span>Spara som kontakt</span>
       <button class="switch ${draft.newCustomer.saveAsContact?'on':''}" data-act="toggle-save-contact"><div class="knob"></div></button>
@@ -520,6 +539,11 @@ function vStepSummary(){
     ['Adress', draftCustomerAddress()]
   ];
   if(!draft.existingCustomerId && draft.newCustomer.phone) custRows.push(['Telefon', draft.newCustomer.phone]);
+  if(!draft.existingCustomerId && draft.newCustomer.isCompany){
+    custRows.push(['Org.nummer', draft.newCustomer.orgNumber]);
+    if(draft.newCustomer.invoiceAddress) custRows.push(['Fakturaadress', draft.newCustomer.invoiceAddress]);
+    if(draft.newCustomer.invoiceReference) custRows.push(['Er referens', draft.newCustomer.invoiceReference]);
+  }
   const jobRows = [
     ['Uppdrag', draft.title],
     ['Typ', draft.workType?WORK_TYPE_LABEL[draft.workType]:''],
@@ -630,6 +654,7 @@ $app.addEventListener('click', async e=>{
   if(a==='clear-existing'){ draft.existingCustomerId=null; searchQuery=''; return render(); }
   if(a==='pick-customer'){ draft.existingCustomerId=b.dataset.id; searchQuery=''; return render(); }
   if(a==='toggle-save-contact'){ draft.newCustomer.saveAsContact=!draft.newCustomer.saveAsContact; return render(); }
+  if(a==='toggle-company'){ draft.newCustomer.isCompany=!draft.newCustomer.isCompany; return render(); }
   if(a==='set-worktype'){ draft.workType=b.dataset.v; return render(); }
   if(a==='set-priority'){ draft.priority=b.dataset.v; return render(); }
 
@@ -640,7 +665,13 @@ $app.addEventListener('click', async e=>{
         name: draft.newCustomer.name.trim(), phone: draft.newCustomer.phone.trim()||null,
         email: draft.newCustomer.email.trim()||null, address: draft.newCustomer.address.trim()||null,
         postalCode: draft.newCustomer.postalCode.trim()||null, city: draft.newCustomer.city.trim()||null,
-        saveAsContact: draft.newCustomer.saveAsContact
+        saveAsContact: draft.newCustomer.saveAsContact,
+        isCompany: draft.newCustomer.isCompany, orgNumber: draft.newCustomer.orgNumber.trim()||null,
+        invoiceAddress: draft.newCustomer.invoiceAddress.trim()||null,
+        invoicePostalCode: draft.newCustomer.invoicePostalCode.trim()||null,
+        invoiceCity: draft.newCustomer.invoiceCity.trim()||null,
+        invoiceReference: draft.newCustomer.invoiceReference.trim()||null,
+        glnNumber: draft.newCustomer.glnNumber.trim()||null
       });
       customerId = c.id;
     }
