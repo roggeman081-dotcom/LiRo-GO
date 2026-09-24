@@ -157,6 +157,7 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .progress-track{height:8px;border-radius:999px;background:var(--surface2);overflow:hidden;margin-top:6px}
 .progress-fill{height:100%;border-radius:999px;background:var(--accent);transition:width .2s ease}
 .job-progress{margin-top:10px}
+.job-progress-bare{margin-bottom:16px}
 .checklist-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
 .checklist-row:last-of-type{border-bottom:0}
 .checklist-check{flex:0 0 26px;width:26px;height:26px;border-radius:50%;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;color:transparent}
@@ -652,6 +653,7 @@ function vHome(){
           <span class="pill ${s.on?'on':''}">${s.l}</span>
         </div>
       </div>
+      ${prog ? `<div class="progress-track job-progress-bare"><div class="progress-fill" style="width:${prog.percent}%"></div></div>` : ''}
       <div class="row name-row">
         <div class="icon-circle">${ICON.wrench}</div>
         <div style="flex:1;min-width:0">
@@ -660,11 +662,6 @@ function vHome(){
         </div>
       </div>
       ${c && c.address ? `<div class="row addr">${ICON.pin}<span>${esc(c.address)}</span></div>` : ''}
-      ${prog ? `
-      <div class="job-progress">
-        <div class="row between" style="font-size:12px"><span class="muted">${prog.done} av ${prog.target} klara</span><span class="bold">${prog.percent}%</span></div>
-        <div class="progress-track"><div class="progress-fill" style="width:${prog.percent}%"></div></div>
-      </div>` : ''}
       <button class="row between foot" style="width:100%" data-act="open-job" data-id="${j.id}">
         <span class="muted" style="font-size:13px">Tryck för detaljer</span>
         <span class="iconbtn filled" style="width:36px;height:36px;flex:0 0 36px">${ICON.arrowRight}</span>
