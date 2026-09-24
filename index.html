@@ -503,6 +503,31 @@ let draft = null;
 let searchQuery = '';
 const $app = document.getElementById('app');
 
+/* ================= Bakåt-navigering (mobilens/webbläsarens tillbaka-knapp/gest) =================
+   Varje åtgärd som öppnar en ny "nivå" (wizard-steg, jobb, materialpanel,
+   ett läge i materialpanelen, inställningar, ett foto) anropar pushNav(),
+   som lägger till ett historik-steg i webbläsaren utan att spara något
+   eget läge. Tillbaka-knapparna i UI:t (och telefonens fysiska/gest-
+   baserade tillbaka) anropar bara history.back() — den enda platsen som
+   faktiskt stänger en nivå är closeTopLayer(), som körs av popstate-
+   lyssnaren. Så gör alla "tillbaka"-vägar exakt samma sak, oavsett om
+   de kom från en knapp i appen eller telefonens egen knapp. */
+function pushNav(){ history.pushState({}, ''); }
+function closeTopLayer(){
+  if(settingsOpen){ settingsOpen=false; return; }
+  if(st.openPhoto){ st.openPhoto=null; return; }
+  if(st.matPanel){
+    if(st.matPanelMode && st.matPanelMode!=='browse'){ st.matPanelMode='browse'; st.matDraft={}; return; }
+    st.matPanel=false; return;
+  }
+  if(st.view==='wizard'){
+    if(st.step===0){ st={view:'home'}; return; }
+    st.step -= 1; return;
+  }
+  if(st.view==='job'){ st={view:'home'}; return; }
+}
+window.addEventListener('popstate', ()=>{ closeTopLayer(); render(); });
+
 function emptyDraft(){
   return { kind:null, method:null, existingCustomerId:null,
     newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true,
@@ -1229,25 +1254,22 @@ $app.addEventListener('click', async e=>{
   const b=e.target.closest('[data-act]'); if(!b) return;
   const a=b.dataset.act;
 
-  if(a==='new-job'){ draft=emptyDraft(); searchQuery=''; st={view:'wizard', step:0}; return render(); }
+  if(a==='new-job'){ draft=emptyDraft(); searchQuery=''; st={view:'wizard', step:0}; pushNav(); return render(); }
   if(a==='open-job'){
     const id=b.dataset.id; await loadJobDetail(id);
-    st={view:'job', id}; return render();
+    st={view:'job', id}; pushNav(); return render();
   }
-  if(a==='job-back'){ st={view:'home'}; return render(); }
+  if(a==='job-back'){ history.back(); return; }
 
-  if(a==='wiz-back'){
-    if(st.step===0){ st={view:'home'}; return render(); }
-    st.step -= 1; return render();
-  }
-  if(a==='wiz-goto'){ st.step = +b.dataset.step; return render(); }
-  if(a==='wiz-next'){ st.step += 1; return render(); }
+  if(a==='wiz-back'){ history.back(); return; }
+  if(a==='wiz-goto'){ st.step = +b.dataset.step; pushNav(); return render(); }
+  if(a==='wiz-next'){ st.step += 1; pushNav(); return render(); }
 
   if(a==='set-kind'){ draft.kind=b.dataset.kind; return render(); }
   if(a==='set-method'){
     if(!draft.kind) return;
     draft.method=b.dataset.method;
-    if(b.dataset.method==='manual'){ st.step=1; return render(); }
+    if(b.dataset.method==='manual'){ st.step=1; pushNav(); return render(); }
     return render();
   }
   if(a==='clear-existing'){ draft.existingCustomerId=null; searchQuery=''; return render(); }
@@ -1282,12 +1304,12 @@ $app.addEventListener('click', async e=>{
     });
     flash('Uppdrag skapat');
     await loadJobDetail(job.id);
-    st={view:'job', id:job.id}; return render();
+    st={view:'job', id:job.id}; pushNav(); return render();
   }
 
   /* ---- foton ---- */
-  if(a==='open-photo'){ st.openPhoto=b.dataset.id; return render(); }
-  if(a==='close-photo'){ st.openPhoto=null; return render(); }
+  if(a==='open-photo'){ st.openPhoto=b.dataset.id; pushNav(); return render(); }
+  if(a==='close-photo'){ history.back(); return; }
   if(a==='delete-photo'){
     await deletePhoto(b.dataset.id);
     URL.revokeObjectURL(photoObjectUrls[b.dataset.id]); delete photoObjectUrls[b.dataset.id];
@@ -1298,20 +1320,21 @@ $app.addEventListener('click', async e=>{
   /* ---- materiallista: registrera-panel ---- */
   if(a==='open-mat-panel'){
     st.matPanel=true; st.matPanelMode='browse'; st.matTab=st.matTab||'recent'; st.matSearch=''; st.matDraft={};
+    pushNav();
     render();
     if(!catalog){
       ensureCatalog().then(()=>{ if(st.matPanel){ const box=document.getElementById('matPanelList'); if(box) box.innerHTML=vMatPanelList(); } });
     }
     return;
   }
-  if(a==='close-mat-panel'){ st.matPanel=false; return render(); }
+  if(a==='close-mat-panel'){ history.back(); return; }
   if(a==='set-mat-tab'){ st.matTab=b.dataset.tab; st.matSearch=''; return render(); }
-  if(a==='switch-to-manual'){ st.matPanelMode='manual'; st.matDraft=st.matDraft||{}; return render(); }
+  if(a==='switch-to-manual'){ st.matPanelMode='manual'; st.matDraft=st.matDraft||{}; pushNav(); return render(); }
   if(a==='switch-to-ai'){
-    if(!getAiKey()){ settingsOpen=true; st.matPanel=false; flash('Lägg till en API-nyckel för AI-förslag'); return render(); }
-    st.matPanelMode='ai'; st.aiMatches=null; st.aiError=null; return render();
+    if(!getAiKey()){ settingsOpen=true; st.matPanel=false; pushNav(); flash('Lägg till en API-nyckel för AI-förslag'); return render(); }
+    st.matPanelMode='ai'; st.aiMatches=null; st.aiError=null; pushNav(); return render();
   }
-  if(a==='back-to-browse'){ st.matPanelMode='browse'; st.matDraft={}; return render(); }
+  if(a==='back-to-browse'){ history.back(); return; }
   if(a==='ai-suggest'){
     const desc = (st.aiDesc||'').trim();
     if(!desc){ flash('Beskriv arbetet först'); return; }
@@ -1341,8 +1364,8 @@ $app.addEventListener('click', async e=>{
   }
 
   /* ---- inställningar ---- */
-  if(a==='open-settings'){ settingsOpen=true; return render(); }
-  if(a==='close-settings'){ settingsOpen=false; return render(); }
+  if(a==='open-settings'){ settingsOpen=true; pushNav(); return render(); }
+  if(a==='close-settings'){ history.back(); return; }
   if(a==='choose-model'){ setAiModel(b.dataset.model); return render(); }
   if(a==='clear-ai-key'){ setAiKey(''); flash('Nyckel borttagen'); return render(); }
   if(a==='toggle-fav'){ toggleFavoriteArtnr(b.dataset.artnr); return render(); }
