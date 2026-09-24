@@ -57,17 +57,15 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .opening{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50;transition:opacity .25s ease-out}
 .opening.fade{opacity:0;pointer-events:none}
 .opening .mark{display:flex;flex-direction:column;align-items:center;gap:16px}
-.opening .go{font-weight:300;font-size:14px;letter-spacing:6px;color:var(--text)}
 .opening .footer{position:absolute;bottom:48px;color:var(--muted);font-size:12px}
-.o-ring{stroke-dasharray:316.7;stroke-dashoffset:316.7;transition:stroke-dashoffset .9s cubic-bezier(.2,.7,.3,1)}
-.o-ring.run{stroke-dashoffset:0}
-.o-bolt{opacity:0;transition:opacity .45s ease-out .9s}
-.o-bolt.run{opacity:1}
-.reduced .o-ring{transition:none;stroke-dashoffset:0}
-.reduced .o-bolt{transition:none;opacity:1}
+.open-logo{width:140px;height:auto;filter:brightness(1)}
+.open-logo.flash{animation:openFlash .45s ease-out}
+@keyframes openFlash{0%{filter:brightness(1)}35%{filter:brightness(2.4) drop-shadow(0 0 24px var(--accent))}100%{filter:brightness(1)}}
+.reduced .open-logo{mask-image:none;-webkit-mask-image:none}
 
 /* ---- home ---- */
 .home-header{padding:16px 16px 0}
+.brand-mini{height:26px;width:auto;display:block}
 .greeting{padding:24px 16px 0}
 .greeting .date{font-size:12px;color:var(--muted);margin-bottom:2px}
 .idag{margin-top:32px}
@@ -287,11 +285,7 @@ function vOpening(){
   return `
   <div class="opening ${reduced?'reduced':''}" id="opening">
     <div class="mark">
-      <svg width="120" height="120" viewBox="0 0 120 120">
-        <circle class="o-ring" id="oring" cx="60" cy="60" r="50.4" stroke="#fff" stroke-width="9.6" fill="none" stroke-linecap="round" transform="rotate(-90 60 60)"/>
-        <polygon class="o-bolt" id="obolt" fill="#fff" points="67.2,33.6 45.6,62.4 60,62.4 52.8,86.4 74.4,57.6 60,57.6"/>
-      </svg>
-      <div class="go">GO</div>
+      <img src="logo-mark.png" id="openLogo" class="open-logo" alt="LIRO">
     </div>
     <div class="footer">LiRo Elteknik AB</div>
   </div>`;
@@ -299,17 +293,37 @@ function vOpening(){
 function afterOpening(){
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const el = document.getElementById('opening');
-  const ring = document.getElementById('oring');
-  const bolt = document.getElementById('obolt');
+  const img = document.getElementById('openLogo');
+  const RING_MS = 900, BOLT_MS = 450, HOLD_MS = 150;
+
   const finish = () => {
     el.classList.add('fade');
     setTimeout(()=>{ st={view:'home'}; render(); }, reduced?0:250);
   };
-  if(reduced){ finish(); return; }
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    ring.classList.add('run'); bolt.classList.add('run');
-  }));
-  setTimeout(finish, 900+450+150);
+
+  if(reduced){
+    img.style.maskImage = 'none'; img.style.webkitMaskImage = 'none';
+    img.classList.add('flash');
+    finish();
+    return;
+  }
+
+  // "Bågen laddas upp runt O:et": a clock-wipe reveal of the logo, like a charging ring.
+  const start = performance.now();
+  function frame(now){
+    const t = Math.min(1, (now - start) / RING_MS);
+    const deg = t * 360;
+    const mask = `conic-gradient(from -90deg, #000 ${deg}deg, transparent ${deg}deg)`;
+    img.style.webkitMaskImage = mask;
+    img.style.maskImage = mask;
+    if(t < 1) requestAnimationFrame(frame);
+    else {
+      img.style.maskImage = 'none'; img.style.webkitMaskImage = 'none';
+      img.classList.add('flash'); // "sedan tänds blixten"
+    }
+  }
+  requestAnimationFrame(frame);
+  setTimeout(finish, RING_MS + BOLT_MS + HOLD_MS);
 }
 
 /* ================= Render: home ================= */
@@ -340,7 +354,7 @@ function vHome(){
 
   return `
   <div class="home-header row between">
-    ${ICON.bolt}
+    <img src="logo-mark.png" class="brand-mini" alt="LIRO">
     <div class="row gap-xs">${ICON.sync}<span class="muted" style="font-size:13px">Sparat lokalt</span></div>
   </div>
   <div class="greeting">
