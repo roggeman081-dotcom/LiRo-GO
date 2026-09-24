@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="LiRo GO">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,100;0,300;0,400;0,500;0,600;0,700&display=swap" rel="stylesheet">
+<title>LiRo GO</title>
+<style>
+:root{
+  --bg:#000000; --surface:#121212; --surface2:#1a1a1a; --text:#f2f2f2; --muted:#8c8c8c;
+  --accent:#ffc21a; --ink:#000000; --line:#242424;
+  --pri-normal:#3dbe6b; --pri-high:#ff9a3d; --pri-urgent:#ff4d4d;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Barlow',-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:400;font-size:16px;line-height:1.4;-webkit-font-smoothing:antialiased}
+#app{max-width:520px;margin:0 auto;min-height:100vh;position:relative;padding-bottom:110px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:active{transform:scale(.98)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select,textarea{font:inherit;color:var(--text);background:var(--surface);border:1px solid transparent;border-radius:12px;padding:13px 14px;width:100%;min-height:44px}
+input::placeholder,textarea::placeholder{color:var(--muted)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+textarea{min-height:88px;resize:vertical}
+svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto;display:block}
+
+/* ---- generic layout helpers ---- */
+.px{padding-left:16px;padding-right:16px}
+.row{display:flex;align-items:center}
+.between{justify-content:space-between}
+.gap-xs{gap:8px} .gap-sm{gap:12px} .gap-md{gap:16px}
+.muted{color:var(--muted)}
+.accent{color:var(--accent)}
+.bold{font-weight:600}
+.card{background:var(--surface);border-radius:20px;padding:16px}
+.iconbtn{width:44px;height:44px;border-radius:50%;background:var(--surface);display:flex;align-items:center;justify-content:center;flex:0 0 44px}
+.iconbtn.filled{background:var(--accent);color:var(--ink)}
+.pill{padding:4px 12px;border-radius:999px;background:var(--surface2);font-size:13px;font-weight:500;color:var(--muted)}
+.pill.on{background:var(--accent);color:var(--ink)}
+.dot{width:8px;height:8px;border-radius:50%}
+.primary-btn{min-height:44px;border-radius:20px;background:var(--accent);color:var(--ink);font-weight:600;padding:0 24px;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.primary-btn[disabled]{opacity:.4;pointer-events:none}
+.h1{font-size:24px;font-weight:600;margin:0}
+.h2{font-size:18px;font-weight:600;margin:0}
+.label{font-size:13px;font-weight:500;color:var(--muted);display:block;margin-bottom:6px}
+
+/* ---- opening screen ---- */
+.opening{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:50;transition:opacity .25s ease-out}
+.opening.fade{opacity:0;pointer-events:none}
+.opening .mark{display:flex;flex-direction:column;align-items:center;gap:16px}
+.opening .go{font-weight:300;font-size:14px;letter-spacing:6px;color:var(--text)}
+.opening .footer{position:absolute;bottom:48px;color:var(--muted);font-size:12px}
+.o-ring{stroke-dasharray:316.7;stroke-dashoffset:316.7;transition:stroke-dashoffset .9s cubic-bezier(.2,.7,.3,1)}
+.o-ring.run{stroke-dashoffset:0}
+.o-bolt{opacity:0;transition:opacity .45s ease-out .9s}
+.o-bolt.run{opacity:1}
+.reduced .o-ring{transition:none;stroke-dashoffset:0}
+.reduced .o-bolt{transition:none;opacity:1}
+
+/* ---- home ---- */
+.home-header{padding:16px 16px 0}
+.greeting{padding:24px 16px 0}
+.greeting .date{font-size:12px;color:var(--muted);margin-bottom:2px}
+.idag{margin-top:32px}
+.idag-head{padding:0 16px;margin-bottom:12px}
+.steps{display:flex;gap:8px;width:80px}
+.steps .dash{height:4px;flex:1;border-radius:999px;background:var(--surface2)}
+.steps .dash.on{background:var(--accent)}
+.cards{display:flex;gap:16px;overflow-x:auto;padding:0 16px 4px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+.cards::-webkit-scrollbar{display:none}
+.jobcard{scroll-snap-align:start;flex:0 0 calc(100% - 48px);min-height:1px}
+.jobcard .top{margin-bottom:16px}
+.jobcard .name-row{gap:12px;margin-bottom:16px}
+.jobcard .icon-circle{width:44px;height:44px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;flex:0 0 44px}
+.jobcard .addr{gap:8px;margin-bottom:16px;color:var(--muted)}
+.jobcard .foot{margin-top:4px}
+.empty{padding:0 16px;color:var(--muted)}
+.home-footer{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;padding:8px 16px calc(16px + env(safe-area-inset-bottom,0px));background:linear-gradient(180deg,rgba(0,0,0,0),var(--bg) 30%);display:flex;gap:12px;align-items:center}
+
+/* ---- wizard ---- */
+.wiz-header{padding:16px 16px 0}
+.wiz-title{flex:1;text-align:center;font-size:18px;font-weight:600}
+.wiz-steps{padding:0 16px;margin-top:16px}
+.wiz-steps .row{gap:8px}
+.wiz-steps .dash{height:4px;flex:1;border-radius:999px;background:var(--surface2)}
+.wiz-steps .dash.on{background:var(--accent)}
+.wiz-body{padding:20px 16px 100px}
+.tile{min-height:44px;border-radius:20px;background:var(--surface);border:1px solid transparent;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;width:100%}
+.tile.on{border-color:var(--accent)}
+.tile.off{opacity:.4;pointer-events:none}
+.tile.row-tile{flex-direction:row;justify-content:flex-start;text-align:left;padding:16px;gap:12px}
+.tile.row-tile .t-text{flex:1}
+.tile .t-sub{font-size:12px;color:var(--muted)}
+.kind-row,.pri-row{display:flex;gap:12px}
+.kind-row .tile,.pri-row .tile{flex:1}
+.method-list{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.field{margin-bottom:16px}
+.field-row{display:flex;gap:16px}
+.field-row>*{flex:1}
+.switch-row{display:flex;align-items:center;justify-content:space-between}
+.switch{position:relative;width:46px;height:28px;border-radius:999px;background:var(--surface2);flex:0 0 46px}
+.switch.on{background:var(--accent)}
+.switch .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--text);transition:left .15s}
+.switch.on .knob{left:21px;background:var(--ink)}
+.desc-wrap{position:relative}
+.desc-wrap .mic-btn{position:absolute;right:8px;bottom:8px}
+.search-wrap{position:relative}
+.search-wrap svg.i{position:absolute;left:14px;top:38px;color:var(--muted)}
+.search-wrap input{padding-left:40px}
+.divider{text-align:center;color:var(--muted);font-size:13px;margin:16px 0}
+.result-row{padding:10px 0;width:100%;text-align:left;border-bottom:1px solid var(--line)}
+.result-row:last-child{border-bottom:0}
+.selected-customer{display:flex;flex-direction:column;gap:16px}
+.wiz-footer{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;padding:8px 16px calc(16px + env(safe-area-inset-bottom,0px));background:var(--bg);display:flex;flex-direction:column;gap:8px}
+.missing{font-size:12px;color:var(--muted)}
+.summary-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0}
+.summary-row .v{text-align:right}
+.section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+#status{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font-size:13px;font-weight:700;color:var(--ink);background:var(--text);border-radius:999px;padding:6px 14px;pointer-events:none;transition:opacity .3s;opacity:0;z-index:60}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="status"></div>
+<div id="app"><p class="empty">Startar…</p></div>
+<script>
+/* ================= Ikoner ================= */
+const ICON = {
+  bolt:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M13 7l-4 6h3l-1 4 4-6h-3z" fill="currentColor" stroke="none"/></svg>',
+  sync:'<span class="dot" style="background:#3dbe6b;display:inline-block"></span>',
+  clock:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+  pin:'<svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-7.2 7-12a7 7 0 1 0-14 0c0 4.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>',
+  wrench:'<svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2z"/></svg>',
+  zap:'<svg class="i" viewBox="0 0 24 24"><path d="M13 3 4 14h6l-1 7 9-11h-6z"/></svg>',
+  gauge:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-4M8 14a4 4 0 0 1 8 0"/></svg>',
+  panel:'<svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 4v16"/></svg>',
+  battery:'<svg class="i" viewBox="0 0 24 24"><rect x="2" y="8" width="16" height="8" rx="2"/><path d="M18 10.5h2a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1h-2"/><path d="M9 10l-2 3h3l-2 3"/></svg>',
+  bulb:'<svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.5.4.8 1 .8 1.6V16h5.4v-.5c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z"/></svg>',
+  chevronLeft:'<svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  x:'<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  mic:'<svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  menu:'<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  plus:'<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  search:'<svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
+  calendar:'<svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  keyboard:'<svg class="i" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>',
+  camera:'<svg class="i" viewBox="0 0 24 24"><path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  arrowRight:'<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  user:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>'
+};
+
+/* ================= Data ================= */
+const WORK_TYPES = [
+  {v:'service', l:'Service/felsökning', i:'wrench'},
+  {v:'new_install', l:'Nyinstallation', i:'zap'},
+  {v:'measurement', l:'Mätteknik', i:'gauge'},
+  {v:'switchboard', l:'Elcentral', i:'panel'},
+  {v:'charging', l:'Laddbox', i:'battery'},
+  {v:'lighting', l:'Belysning', i:'bulb'}
+];
+const WORK_TYPE_LABEL = Object.fromEntries(WORK_TYPES.map(w=>[w.v,w.l]));
+const PRIORITIES = [{v:'normal',l:'Normal'},{v:'high',l:'Hög'},{v:'urgent',l:'Akut'}];
+const PRIORITY_LABEL = {normal:'Normal',high:'Hög',urgent:'Akut'};
+const PRIORITY_COLOR = {normal:'var(--pri-normal)',high:'var(--pri-high)',urgent:'var(--pri-urgent)'};
+
+/* ================= Lagring (IndexedDB) ================= */
+let DB, customers=[], jobs=[];
+function openDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('lirogo',1);
+    r.onupgradeneeded=()=>{ const d=r.result; d.createObjectStore('customers',{keyPath:'id'}); d.createObjectStore('jobs',{keyPath:'id'}); };
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  });
+}
+function tx(store,mode,fn){
+  return new Promise((res,rej)=>{ const t=DB.transaction(store,mode); const q=fn(t.objectStore(store)); t.oncomplete=()=>res(q&&q.result); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error); });
+}
+const dbPut=(s,v)=>tx(s,'readwrite',o=>o.put(v));
+const dbAll=s=>tx(s,'readonly',o=>o.getAll());
+
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function flash(t){ const s=document.getElementById('status'); s.textContent=t; s.style.opacity=1; clearTimeout(flash.t); flash.t=setTimeout(()=>s.style.opacity=0,1200); }
+
+async function createCustomer(input){
+  const now=new Date().toISOString();
+  const c={ id:uid(), name:input.name, phone:input.phone||null, email:input.email||null, address:input.address||null,
+    postalCode:input.postalCode||null, city:input.city||null, saveAsContact:!!input.saveAsContact, createdAt:now, updatedAt:now };
+  await dbPut('customers',c); customers.push(c); return c;
+}
+function deriveStatus(plannedAt){
+  if(!plannedAt) return 'later';
+  const p=new Date(plannedAt), n=new Date();
+  const d0=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+  const d1=new Date(p.getFullYear(),p.getMonth(),p.getDate());
+  const diff=Math.round((d1-d0)/86400000);
+  if(diff===0) return 'ongoing';
+  if(diff===1) return 'tomorrow';
+  return 'later';
+}
+async function createJob(input){
+  const now=new Date().toISOString();
+  const j={ id:uid(), customerId:input.customerId, kind:input.kind, title:input.title, workType:input.workType,
+    description:input.description||null, plannedAt:input.plannedAt||null, priority:input.priority,
+    status:deriveStatus(input.plannedAt), createdAt:now, updatedAt:now };
+  await dbPut('jobs',j); jobs.push(j); return j;
+}
+async function seedDemoIfEmpty(){
+  if(jobs.length>0) return;
+  const c=await createCustomer({name:'Karlssons Fastigheter AB', phone:'070-123 45 67', address:'Industrivägen 12', postalCode:'123 45', city:'Göteborg', saveAsContact:true});
+  const today=new Date(); today.setHours(7,0,0,0);
+  const tomorrow=new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+  await createJob({customerId:c.id, kind:'customer_job', title:'Felsökning elcentral', workType:'switchboard', plannedAt:today.toISOString(), priority:'high'});
+  await createJob({customerId:c.id, kind:'customer_job', title:'Installation laddbox', workType:'charging', plannedAt:tomorrow.toISOString(), priority:'normal'});
+}
+function todaysJobs(){ return jobs.filter(j=>j.status!=='done').sort((a,b)=>(a.plannedAt||'').localeCompare(b.plannedAt||'')); }
+function customerOf(j){ return customers.find(c=>c.id===j.customerId); }
+
+/* ================= Formattering ================= */
+function greeting(){ const h=new Date().getHours(); if(h<10) return 'God morgon'; if(h<17) return 'Hej'; return 'God kväll'; }
+function formatDate(){
+  const days=['söndag','måndag','tisdag','onsdag','torsdag','fredag','lördag'];
+  const months=['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'];
+  const n=new Date(); return `${days[n.getDay()]} ${n.getDate()} ${months[n.getMonth()]}`;
+}
+function fmtTimeRange(plannedAt){
+  if(!plannedAt) return 'Ingen tid vald';
+  const s=new Date(plannedAt), e=new Date(s.getTime()+4*3600000);
+  const f=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  return `${f(s)} – ${f(e)}`;
+}
+function fmtDateTime(plannedAt){
+  if(!plannedAt) return 'Ingen tid vald';
+  const days=['sön','mån','tis','ons','tors','fre','lör'];
+  const d=new Date(plannedAt);
+  const day=String(d.getDate()).padStart(2,'0'), month=String(d.getMonth()+1).padStart(2,'0');
+  const time=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  return `${days[d.getDay()]} ${day}/${month} ${time}`;
+}
+function statusLabel(status){
+  if(status==='ongoing') return {l:'Pågår', on:true};
+  if(status==='tomorrow') return {l:'Imorgon', on:false};
+  if(status==='done') return {l:'Klart', on:false};
+  return {l:'Senare', on:false};
+}
+
+/* ================= State ================= */
+let st = {view:'opening'};
+let draft = null;
+let searchQuery = '';
+const $app = document.getElementById('app');
+
+function emptyDraft(){
+  return { kind:null, method:null, existingCustomerId:null,
+    newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true},
+    title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal' };
+}
+function draftPlannedAt(){
+  if(!draft.plannedDate) return null;
+  const t = draft.plannedTime || '00:00';
+  const iso = `${draft.plannedDate}T${t}:00`;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+function draftCustomerName(){
+  if(draft.existingCustomerId){ const c=customers.find(x=>x.id===draft.existingCustomerId); return c?c.name:''; }
+  return draft.newCustomer.name.trim();
+}
+function draftCustomerAddress(){
+  if(draft.existingCustomerId){ const c=customers.find(x=>x.id===draft.existingCustomerId); return c?(c.address||''):''; }
+  return draft.newCustomer.address.trim();
+}
+
+/* ================= Render: opening ================= */
+function vOpening(){
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return `
+  <div class="opening ${reduced?'reduced':''}" id="opening">
+    <div class="mark">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle class="o-ring" id="oring" cx="60" cy="60" r="50.4" stroke="#fff" stroke-width="9.6" fill="none" stroke-linecap="round" transform="rotate(-90 60 60)"/>
+        <polygon class="o-bolt" id="obolt" fill="#fff" points="67.2,33.6 45.6,62.4 60,62.4 52.8,86.4 74.4,57.6 60,57.6"/>
+      </svg>
+      <div class="go">GO</div>
+    </div>
+    <div class="footer">LiRo Elteknik AB</div>
+  </div>`;
+}
+function afterOpening(){
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const el = document.getElementById('opening');
+  const ring = document.getElementById('oring');
+  const bolt = document.getElementById('obolt');
+  const finish = () => {
+    el.classList.add('fade');
+    setTimeout(()=>{ st={view:'home'}; render(); }, reduced?0:250);
+  };
+  if(reduced){ finish(); return; }
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    ring.classList.add('run'); bolt.classList.add('run');
+  }));
+  setTimeout(finish, 900+450+150);
+}
+
+/* ================= Render: home ================= */
+function vHome(){
+  const list = todaysJobs();
+  const cards = list.map(j=>{
+    const c = customerOf(j); const s = statusLabel(j.status);
+    return `
+    <div class="card jobcard">
+      <div class="row between top">
+        <div class="row gap-xs muted">${ICON.clock}<span>${esc(fmtTimeRange(j.plannedAt))}</span></div>
+        <span class="pill ${s.on?'on':''}">${s.l}</span>
+      </div>
+      <div class="row name-row">
+        <div class="icon-circle">${ICON.wrench}</div>
+        <div style="flex:1;min-width:0">
+          <div class="muted" style="font-size:13px">${esc(j.workType?WORK_TYPE_LABEL[j.workType]:'Uppdrag')}</div>
+          <div style="font-size:20px;font-weight:700">${esc(j.title)}</div>
+        </div>
+      </div>
+      ${c && c.address ? `<div class="row addr">${ICON.pin}<span>${esc(c.address)}</span></div>` : ''}
+      <button class="row between foot" style="width:100%" data-act="open-job" data-id="${j.id}">
+        <span class="muted" style="font-size:13px">Tryck för detaljer</span>
+        <span class="iconbtn filled" style="width:36px;height:36px;flex:0 0 36px">${ICON.arrowRight}</span>
+      </button>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="home-header row between">
+    ${ICON.bolt}
+    <div class="row gap-xs">${ICON.sync}<span class="muted" style="font-size:13px">Sparat lokalt</span></div>
+  </div>
+  <div class="greeting">
+    <div class="date">${esc(formatDate())}</div>
+    <div class="h1">${esc(greeting())}, Rogge</div>
+  </div>
+  <div class="idag">
+    <div class="row between idag-head">
+      <div class="h2">Idag</div>
+      ${list.length>1?`<div class="steps">${list.map((_,i)=>`<div class="dash ${i===0?'on':''}"></div>`).join('')}</div>`:''}
+    </div>
+    ${list.length===0?`<div class="empty">Inga uppdrag idag. Skapa ett nytt för att komma igång.</div>`:`<div class="cards" id="cardscroll">${cards}</div>`}
+  </div>
+  <div class="home-footer">
+    <button class="primary-btn" style="flex:1" data-act="new-job">${ICON.plus}<span>Nytt uppdrag</span></button>
+    <button class="iconbtn" aria-label="Diktera">${ICON.mic}</button>
+    <button class="iconbtn" aria-label="Meny">${ICON.menu}</button>
+  </div>`;
+}
+function afterHome(){
+  const scroller = document.getElementById('cardscroll');
+  if(!scroller) return;
+  const dashes = document.querySelectorAll('.steps .dash');
+  if(!dashes.length) return;
+  scroller.addEventListener('scroll', ()=>{
+    const step = scroller.clientWidth - 32; // card width (100% - 48px) + 16px gap
+    const idx = Math.round(scroller.scrollLeft / step);
+    dashes.forEach((d,i)=>d.classList.toggle('on', i===Math.min(Math.max(idx,0),dashes.length-1)));
+  });
+}
+
+/* ================= Render: wizard header ================= */
+function vWizHeader(title, isFirst, step, total){
+  return `
+  <div class="wiz-header row between">
+    <button class="iconbtn" data-act="wiz-back" aria-label="${isFirst?'Stäng':'Tillbaka'}">${isFirst?ICON.x:ICON.chevronLeft}</button>
+    <div class="wiz-title">${esc(title)}</div>
+    <div style="width:44px"></div>
+  </div>
+  ${typeof step==='number'?`<div class="wiz-steps"><div class="row">${Array.from({length:total}).map((_,i)=>`<div class="dash ${i===step?'on':''}"></div>`).join('')}</div></div>`:''}`;
+}
+
+/* ================= Render: step kind+method (skärm 2) ================= */
+function vStepKind(){
+  return `
+  ${vWizHeader('Nytt uppdrag', true)}
+  <div class="wiz-body">
+    <div class="field">
+      <span class="label">Vad gäller det?</span>
+      <div class="kind-row">
+        <button class="tile ${draft.kind==='customer_job'?'on':''}" data-act="set-kind" data-kind="customer_job"><span>Kundjobb</span></button>
+        <button class="tile ${draft.kind==='project'?'on':''}" data-act="set-kind" data-kind="project"><span>Projekt</span></button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label">Hur vill du skapa uppdraget?</span>
+      <div class="method-list">
+        <button class="tile row-tile ${!draft.kind?'off':''} ${draft.method==='manual'?'on':''}" data-act="set-method" data-method="manual">
+          ${ICON.keyboard}<span class="t-text">Skapa manuellt</span>
+        </button>
+        <button class="tile row-tile off">
+          ${ICON.camera}<span class="t-text">Fotografera<span class="t-sub" style="display:block">Kommer snart</span></span>
+        </button>
+        <button class="tile row-tile off">
+          ${ICON.mic}<span class="t-text">Diktera med röst<span class="t-sub" style="display:block">Kommer snart</span></span>
+        </button>
+      </div>
+    </div>
+    <div class="card"><span class="muted" style="font-size:13px">Tips: Du kan alltid ändra uppgifterna senare inne i uppdraget.</span></div>
+  </div>`;
+}
+
+/* ================= Render: step customer (skärm 3) ================= */
+function vStepCustomer(){
+  const existing = draft.existingCustomerId ? customers.find(c=>c.id===draft.existingCustomerId) : null;
+  const results = (!existing && searchQuery.trim()) ? customers.filter(c=>c.name.toLowerCase().includes(searchQuery.trim().toLowerCase())).slice(0,20) : [];
+
+  const body = existing ? `
+    <div class="card selected-customer">
+      <div class="row gap-sm">
+        <div class="icon-circle">${ICON.user}</div>
+        <div style="flex:1">
+          <div class="bold">${esc(existing.name)}</div>
+          ${existing.address?`<div class="muted" style="font-size:13px">${esc(existing.address)}</div>`:''}
+        </div>
+      </div>
+      <button class="accent" data-act="clear-existing" style="text-align:left;font-size:13px;font-weight:500">Byt kund</button>
+    </div>` : `
+    <div class="field search-wrap">
+      <span class="label">Sök befintlig kund</span>
+      ${ICON.search}
+      <input type="text" placeholder="Namn på kund…" value="${esc(searchQuery)}" data-field="search">
+    </div>
+    <div id="searchResults">${vSearchResults(results)}</div>
+    <div class="divider">eller ny kund</div>
+    <div class="field"><span class="label">Namn *</span><input type="text" placeholder="För- och efternamn / företag" value="${esc(draft.newCustomer.name)}" data-field="nc.name"></div>
+    <div class="field"><span class="label">Telefon</span><input type="tel" placeholder="070-123 45 67" value="${esc(draft.newCustomer.phone)}" data-field="nc.phone"></div>
+    <div class="field"><span class="label">E-post</span><input type="email" placeholder="namn@exempel.se" value="${esc(draft.newCustomer.email)}" data-field="nc.email"></div>
+    <div class="field"><span class="label">Adress *</span><input type="text" placeholder="Gatuadress" value="${esc(draft.newCustomer.address)}" data-field="nc.address"></div>
+    <div class="field field-row">
+      <div><span class="label">Postnummer</span><input type="text" placeholder="123 45" value="${esc(draft.newCustomer.postalCode)}" data-field="nc.postalCode"></div>
+      <div><span class="label">Ort</span><input type="text" placeholder="Ort" value="${esc(draft.newCustomer.city)}" data-field="nc.city"></div>
+    </div>
+    <div class="card switch-row">
+      <span>Spara som kontakt</span>
+      <button class="switch ${draft.newCustomer.saveAsContact?'on':''}" data-act="toggle-save-contact"><div class="knob"></div></button>
+    </div>`;
+
+  return `${vWizHeader('Kunduppgifter', false, 0, 3)}<div class="wiz-body">${body}</div>`;
+}
+function vSearchResults(results){
+  if(!results.length) return '';
+  return `<div class="card">${results.map(c=>`<button class="result-row" data-act="pick-customer" data-id="${c.id}">${esc(c.name)}</button>`).join('')}</div>`;
+}
+function customerMissing(){
+  if(draft.existingCustomerId) return [];
+  const m=[]; if(!draft.newCustomer.name.trim()) m.push('Namn'); if(!draft.newCustomer.address.trim()) m.push('Adress'); return m;
+}
+
+/* ================= Render: step details (skärm 4) ================= */
+function vStepDetails(){
+  const grid = WORK_TYPES.map(w=>`
+    <button class="tile ${draft.workType===w.v?'on':''}" data-act="set-worktype" data-v="${w.v}">
+      ${ICON[w.i]}<span style="font-size:13px">${esc(w.l)}</span>
+    </button>`).join('');
+  const pri = PRIORITIES.map(p=>`
+    <button class="tile ${draft.priority===p.v?'on':''}" data-act="set-priority" data-v="${p.v}"><span>${esc(p.l)}</span></button>`).join('');
+
+  return `
+  ${vWizHeader('Arbetsinfo', false, 1, 3)}
+  <div class="wiz-body">
+    <div class="field"><span class="label">Namn på uppdrag *</span><input type="text" placeholder="T.ex. Felsökning elcentral" value="${esc(draft.title)}" data-field="title"></div>
+    <div class="field">
+      <span class="label">Typ av arbete</span>
+      <div class="grid3">${grid}</div>
+    </div>
+    <div class="field">
+      <span class="label">Beskrivning</span>
+      <div class="desc-wrap">
+        <textarea placeholder="Kort beskrivning av uppdraget…" data-field="description">${esc(draft.description)}</textarea>
+        <button class="iconbtn mic-btn" style="width:36px;height:36px" aria-label="Diktera beskrivning">${ICON.mic}</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label">Planerad tid</span>
+      <div class="field-row">
+        <div class="row gap-xs" style="background:var(--surface);border-radius:12px;padding:0 12px">${ICON.calendar}<input type="date" style="background:transparent;padding:13px 0" value="${esc(draft.plannedDate)}" data-field="plannedDate"></div>
+        <div style="background:var(--surface);border-radius:12px;padding:0 12px"><input type="time" style="background:transparent;padding:13px 0" value="${esc(draft.plannedTime)}" data-field="plannedTime"></div>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label">Prioritet</span>
+      <div class="pri-row">${pri}</div>
+    </div>
+  </div>`;
+}
+function detailsMissing(){ const m=[]; if(!draft.title.trim()) m.push('Namn på uppdrag'); return m; }
+
+/* ================= Render: step summary (skärm 5) ================= */
+function vStepSummary(){
+  const custRows = [
+    ['Namn', draftCustomerName()],
+    ['Adress', draftCustomerAddress()]
+  ];
+  if(!draft.existingCustomerId && draft.newCustomer.phone) custRows.push(['Telefon', draft.newCustomer.phone]);
+  const jobRows = [
+    ['Uppdrag', draft.title],
+    ['Typ', draft.workType?WORK_TYPE_LABEL[draft.workType]:''],
+    ['Planerad tid', fmtDateTime(draftPlannedAt())]
+  ];
+  const section = (title, rows, editStep) => `
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-head"><div class="h2">${title}</div><button class="accent" style="font-weight:500;font-size:13px" data-act="wiz-goto" data-step="${editStep}">Ändra</button></div>
+      ${rows.map(([l,v])=>`<div class="summary-row"><span class="muted">${l}</span><span class="v">${esc(v||'—')}</span></div>`).join('')}
+    </div>`;
+
+  return `
+  ${vWizHeader('Sammanfattning', false, 2, 3)}
+  <div class="wiz-body">
+    ${section('Kunduppgifter', custRows, 1)}
+    ${section('Arbetsinfo', jobRows, 2)}
+    <div class="card" style="margin-bottom:16px">
+      <div class="summary-row"><span class="muted">Prioritet</span><span class="v row gap-xs" style="justify-content:flex-end"><span class="dot" style="background:${PRIORITY_COLOR[draft.priority]}"></span>${PRIORITY_LABEL[draft.priority]}</span></div>
+    </div>
+    ${draft.description?`<div class="card"><span class="label">Beskrivning</span><span>${esc(draft.description)}</span></div>`:''}
+  </div>`;
+}
+
+/* ================= Wizard footer ================= */
+function vWizFooter(){
+  if(st.step===0) return '';
+  if(st.step===1){
+    const m=customerMissing();
+    return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Nästa</button></div>`;
+  }
+  if(st.step===2){
+    const m=detailsMissing();
+    return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Nästa</button></div>`;
+  }
+  if(st.step===3){
+    return `<div class="wiz-footer"><button class="primary-btn" data-act="wiz-submit">Skapa uppdrag</button></div>`;
+  }
+  return '';
+}
+
+/* ================= Render dispatch ================= */
+function render(){
+  if(st.view==='opening'){ $app.innerHTML = vOpening(); afterOpening(); return; }
+  if(st.view==='home'){ $app.innerHTML = vHome(); afterHome(); return; }
+  if(st.view==='wizard'){
+    const stepView = [vStepKind, vStepCustomer, vStepDetails, vStepSummary][st.step]();
+    $app.innerHTML = stepView + vWizFooter();
+    return;
+  }
+}
+
+/* ================= Events ================= */
+$app.addEventListener('input', e=>{
+  const t=e.target; const f=t.dataset.field; if(!f) return;
+  if(f==='search'){
+    searchQuery=t.value;
+    const existing = draft.existingCustomerId ? customers.find(c=>c.id===draft.existingCustomerId) : null;
+    const results = (!existing && searchQuery.trim()) ? customers.filter(c=>c.name.toLowerCase().includes(searchQuery.trim().toLowerCase())).slice(0,20) : [];
+    const box = document.getElementById('searchResults');
+    if(box) box.innerHTML = vSearchResults(results);
+    return;
+  }
+  if(f.startsWith('nc.')){ draft.newCustomer[f.slice(3)]=t.value; if(f==='nc.name'||f==='nc.address') patchWizFooter(); return; }
+  if(f==='title'){ draft.title=t.value; patchWizFooter(); return; }
+  if(f==='description'){ draft.description=t.value; return; }
+  if(f==='plannedDate'){ draft.plannedDate=t.value; return; }
+  if(f==='plannedTime'){ draft.plannedTime=t.value; return; }
+});
+
+// Updates only the Nästa-button's disabled state and the missing-fields hint,
+// without touching the inputs above (which would drop focus mid-keystroke).
+function patchWizFooter(){
+  const footer = $app.querySelector('.wiz-footer'); if(!footer) return;
+  const btn = footer.querySelector('.primary-btn');
+  const missing = st.step===1 ? customerMissing() : st.step===2 ? detailsMissing() : [];
+  let hint = footer.querySelector('.missing');
+  if(missing.length){
+    if(!hint){ hint = document.createElement('span'); hint.className='missing'; footer.insertBefore(hint, btn); }
+    hint.textContent = `Saknas: ${missing.join(', ')}`;
+    btn.setAttribute('disabled','');
+  } else {
+    if(hint) hint.remove();
+    btn.removeAttribute('disabled');
+  }
+}
+
+$app.addEventListener('click', async e=>{
+  const b=e.target.closest('[data-act]'); if(!b) return;
+  const a=b.dataset.act;
+
+  if(a==='new-job'){ draft=emptyDraft(); searchQuery=''; st={view:'wizard', step:0}; return render(); }
+  if(a==='open-job'){ flash('Detaljvy kommer i ett senare steg'); return; }
+
+  if(a==='wiz-back'){
+    if(st.step===0){ st={view:'home'}; return render(); }
+    st.step -= 1; return render();
+  }
+  if(a==='wiz-goto'){ st.step = +b.dataset.step; return render(); }
+  if(a==='wiz-next'){ st.step += 1; return render(); }
+
+  if(a==='set-kind'){ draft.kind=b.dataset.kind; return render(); }
+  if(a==='set-method'){
+    if(!draft.kind) return;
+    draft.method=b.dataset.method;
+    if(b.dataset.method==='manual'){ st.step=1; return render(); }
+    return render();
+  }
+  if(a==='clear-existing'){ draft.existingCustomerId=null; searchQuery=''; return render(); }
+  if(a==='pick-customer'){ draft.existingCustomerId=b.dataset.id; searchQuery=''; return render(); }
+  if(a==='toggle-save-contact'){ draft.newCustomer.saveAsContact=!draft.newCustomer.saveAsContact; return render(); }
+  if(a==='set-worktype'){ draft.workType=b.dataset.v; return render(); }
+  if(a==='set-priority'){ draft.priority=b.dataset.v; return render(); }
+
+  if(a==='wiz-submit'){
+    let customerId = draft.existingCustomerId;
+    if(!customerId){
+      const c = await createCustomer({
+        name: draft.newCustomer.name.trim(), phone: draft.newCustomer.phone.trim()||null,
+        email: draft.newCustomer.email.trim()||null, address: draft.newCustomer.address.trim()||null,
+        postalCode: draft.newCustomer.postalCode.trim()||null, city: draft.newCustomer.city.trim()||null,
+        saveAsContact: draft.newCustomer.saveAsContact
+      });
+      customerId = c.id;
+    }
+    await createJob({
+      customerId, kind: draft.kind||'customer_job', title: draft.title.trim(), workType: draft.workType,
+      description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority
+    });
+    flash('Uppdrag skapat');
+    st={view:'home'}; return render();
+  }
+});
+
+/* ================= Boot ================= */
+(async function boot(){
+  try{
+    DB = await openDB();
+    customers = await dbAll('customers');
+    jobs = await dbAll('jobs');
+    await seedDemoIfEmpty();
+  }catch(err){ console.error('Kunde inte öppna lagring', err); }
+  render();
+
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
