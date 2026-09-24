@@ -46,6 +46,7 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .iconbtn.filled{background:var(--accent);color:var(--ink)}
 .pill{padding:4px 12px;border-radius:999px;background:var(--surface2);font-size:13px;font-weight:500;color:var(--muted)}
 .pill.on{background:var(--accent);color:var(--ink)}
+.pill.quote{background:transparent;border:1px solid var(--pri-high);color:var(--pri-high)}
 .dot{width:8px;height:8px;border-radius:50%}
 .primary-btn{min-height:44px;border-radius:20px;background:var(--accent);color:var(--ink);font-weight:600;padding:0 24px;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
 .primary-btn[disabled]{opacity:.4;pointer-events:none}
@@ -257,7 +258,7 @@ async function createJob(input){
   const now=new Date().toISOString();
   const j={ id:uid(), customerId:input.customerId, kind:input.kind, title:input.title, workType:input.workType,
     description:input.description||null, plannedAt:input.plannedAt||null, priority:input.priority,
-    status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now };
+    isQuote:!!input.isQuote, status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now };
   await dbPut('jobs',j); jobs.push(j); return j;
 }
 function jobById(id){ return jobs.find(j=>j.id===id); }
@@ -334,7 +335,7 @@ function emptyDraft(){
   return { kind:null, method:null, existingCustomerId:null,
     newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true,
       isCompany:false,orgNumber:'',invoiceAddress:'',invoicePostalCode:'',invoiceCity:'',invoiceReference:'',glnNumber:''},
-    title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal' };
+    title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal', isQuote:false };
 }
 function draftPlannedAt(){
   if(!draft.plannedDate) return null;
@@ -408,7 +409,10 @@ function vHome(){
     <div class="card jobcard">
       <div class="row between top">
         <div class="row gap-xs muted">${ICON.clock}<span>${esc(fmtTimeRange(j.plannedAt))}</span></div>
-        <span class="pill ${s.on?'on':''}">${s.l}</span>
+        <div class="row gap-xs">
+          ${j.isQuote?'<span class="pill quote">Offert</span>':''}
+          <span class="pill ${s.on?'on':''}">${s.l}</span>
+        </div>
       </div>
       <div class="row name-row">
         <div class="icon-circle">${ICON.wrench}</div>
@@ -575,6 +579,13 @@ function vStepDetails(){
   ${vWizHeader('Arbetsinfo', false, 1, 3)}
   <div class="wiz-body">
     <div class="field"><span class="label">Namn på uppdrag *</span><input type="text" placeholder="T.ex. Felsökning elcentral" value="${esc(draft.title)}" data-field="title"></div>
+    <div class="card switch-row" style="margin-bottom:16px">
+      <div>
+        <div>Offert</div>
+        <div class="muted" style="font-size:12px;margin-top:2px">${draft.isQuote?'Inte bekräftat jobb ännu':'Skarpt uppdrag'}</div>
+      </div>
+      <button class="switch ${draft.isQuote?'on':''}" data-act="toggle-quote"><div class="knob"></div></button>
+    </div>
     <div class="field">
       <span class="label">Typ av arbete</span>
       <div class="grid3">${grid}</div>
@@ -616,7 +627,8 @@ function vStepSummary(){
   const jobRows = [
     ['Uppdrag', draft.title],
     ['Typ', draft.workType?WORK_TYPE_LABEL[draft.workType]:''],
-    ['Planerad tid', fmtDateTime(draftPlannedAt())]
+    ['Planerad tid', fmtDateTime(draftPlannedAt())],
+    ['Status', draft.isQuote?'Offert':'Skarpt uppdrag']
   ];
   const section = (title, rows, editStep) => `
     <div class="card" style="margin-bottom:16px">
@@ -740,7 +752,10 @@ function vJobDetail(id){
   <div class="job-body">
     <div class="card">
       <div class="row between" style="margin-bottom:10px">
-        <span class="pill ${s.on?'on':''}">${s.l}</span>
+        <div class="row gap-xs">
+          ${job.isQuote?'<span class="pill quote">Offert</span>':''}
+          <span class="pill ${s.on?'on':''}">${s.l}</span>
+        </div>
         <span class="row gap-xs"><span class="dot" style="background:${PRIORITY_COLOR[job.priority]}"></span>${PRIORITY_LABEL[job.priority]}</span>
       </div>
       <div class="bold" style="font-size:17px">${esc(c?c.name:'')}</div>
@@ -880,6 +895,7 @@ $app.addEventListener('click', async e=>{
   if(a==='toggle-company'){ draft.newCustomer.isCompany=!draft.newCustomer.isCompany; return render(); }
   if(a==='set-worktype'){ draft.workType=b.dataset.v; return render(); }
   if(a==='set-priority'){ draft.priority=b.dataset.v; return render(); }
+  if(a==='toggle-quote'){ draft.isQuote=!draft.isQuote; return render(); }
 
   if(a==='wiz-submit'){
     let customerId = draft.existingCustomerId;
@@ -900,7 +916,8 @@ $app.addEventListener('click', async e=>{
     }
     const job = await createJob({
       customerId, kind: draft.kind||'customer_job', title: draft.title.trim(), workType: draft.workType,
-      description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority
+      description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority,
+      isQuote: draft.isQuote
     });
     flash('Uppdrag skapat');
     await loadJobDetail(job.id);
