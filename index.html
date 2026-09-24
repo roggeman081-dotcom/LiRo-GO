@@ -124,6 +124,36 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .summary-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0}
 .summary-row .v{text-align:right}
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+/* ---- job detail ---- */
+.job-body{padding:16px 16px 100px}
+.section{margin-top:28px}
+.section-title{font-size:18px;font-weight:600;margin-bottom:12px}
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.photo-thumb{position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--surface)}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-thumb .del{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}
+.photo-thumb .del svg{width:14px;height:14px}
+.photo-add{aspect-ratio:1;border-radius:14px;background:var(--surface);border:1px dashed var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);font-size:12px}
+.photo-add input{display:none}
+.photo-comment-card{margin-top:8px}
+.photo-comment-card img{width:100%;border-radius:14px;margin-bottom:10px;max-height:220px;object-fit:cover}
+.actions-row{display:flex;gap:12px}
+.actions-row .tile{flex:1}
+.material-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.material-row:last-of-type{border-bottom:0}
+.material-info{flex:1;min-width:0}
+.material-name{font-weight:600;font-size:15px}
+.material-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.material-cols{display:flex;gap:16px;text-align:right;font-size:13px}
+.material-cols .lbl{color:var(--muted);font-size:11px}
+.material-del{flex:0 0 32px;width:32px;height:32px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center}
+.summary-card{background:var(--surface);border-radius:20px;padding:16px;margin-top:12px}
+.summary-total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.add-form{background:var(--surface);border-radius:20px;padding:16px;margin-top:12px;display:flex;flex-direction:column;gap:12px}
+.add-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mic-inline{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px}
+.field-mic{position:relative}
+.field-mic input{padding-right:44px}
 #status{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font-size:13px;font-weight:700;color:var(--ink);background:var(--text);border-radius:999px;padding:6px 14px;pointer-events:none;transition:opacity .3s;opacity:0;z-index:60}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -154,7 +184,12 @@ const ICON = {
   keyboard:'<svg class="i" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>',
   camera:'<svg class="i" viewBox="0 0 24 24"><path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   arrowRight:'<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
-  user:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>'
+  user:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>',
+  trash:'<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>',
+  box:'<svg class="i" viewBox="0 0 24 24"><path d="M3 8l9-5 9 5-9 5-9-5zM3 8v9l9 5M21 8v9l-9 5M12 13v9"/></svg>',
+  cart:'<svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M3 4h2l2.2 11h11.1L21 8H6.4"/></svg>',
+  calc:'<svg class="i" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h2M14 12h2M8 16h2M14 16h2"/></svg>',
+  save:'<svg class="i" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>'
 };
 
 /* ================= Data ================= */
@@ -175,8 +210,14 @@ const PRIORITY_COLOR = {normal:'var(--pri-normal)',high:'var(--pri-high)',urgent
 let DB, customers=[], jobs=[];
 function openDB(){
   return new Promise((res,rej)=>{
-    const r=indexedDB.open('lirogo',1);
-    r.onupgradeneeded=()=>{ const d=r.result; d.createObjectStore('customers',{keyPath:'id'}); d.createObjectStore('jobs',{keyPath:'id'}); };
+    const r=indexedDB.open('lirogo',2);
+    r.onupgradeneeded=()=>{
+      const d=r.result;
+      if(!d.objectStoreNames.contains('customers')) d.createObjectStore('customers',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('jobs')) d.createObjectStore('jobs',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('photos')) d.createObjectStore('photos',{keyPath:'id'}).createIndex('job','jobId');
+      if(!d.objectStoreNames.contains('materials')) d.createObjectStore('materials',{keyPath:'id'}).createIndex('job','jobId');
+    };
     r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
   });
 }
@@ -185,6 +226,8 @@ function tx(store,mode,fn){
 }
 const dbPut=(s,v)=>tx(s,'readwrite',o=>o.put(v));
 const dbAll=s=>tx(s,'readonly',o=>o.getAll());
+const dbDel=(s,k)=>tx(s,'readwrite',o=>o.delete(k));
+const dbByJob=(s,jobId)=>tx(s,'readonly',o=>o.index('job').getAll(jobId));
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -210,8 +253,33 @@ async function createJob(input){
   const now=new Date().toISOString();
   const j={ id:uid(), customerId:input.customerId, kind:input.kind, title:input.title, workType:input.workType,
     description:input.description||null, plannedAt:input.plannedAt||null, priority:input.priority,
-    status:deriveStatus(input.plannedAt), createdAt:now, updatedAt:now };
+    status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now };
   await dbPut('jobs',j); jobs.push(j); return j;
+}
+function jobById(id){ return jobs.find(j=>j.id===id); }
+
+/* ---- foton ---- */
+async function addPhoto(jobId, file, comment){
+  const id=uid();
+  const p={ id, jobId, blob:file, comment:comment||'', createdAt:new Date().toISOString() };
+  await dbPut('photos',p); return p;
+}
+async function updatePhotoComment(id, comment){
+  const p = jobPhotos.find(x=>x.id===id); if(!p) return;
+  p.comment = comment; await dbPut('photos',p);
+}
+async function deletePhoto(id){ await dbDel('photos',id); }
+
+/* ---- materiallista ---- */
+async function addMaterial(jobId, input){
+  const m={ id:uid(), jobId, name:input.name, description:input.description||'', eNr:input.eNr||'',
+    qty:input.qty||0, unit:input.unit||'st', unitPrice:input.unitPrice||0, createdAt:new Date().toISOString() };
+  await dbPut('materials',m); return m;
+}
+async function deleteMaterial(id){ await dbDel('materials',id); }
+async function setJobMarkup(jobId, percent){
+  const j=jobById(jobId); if(!j) return;
+  j.markupPercent=percent; await dbPut('jobs',j);
 }
 async function seedDemoIfEmpty(){
   if(jobs.length>0) return;
@@ -387,10 +455,11 @@ function afterHome(){
 }
 
 /* ================= Render: wizard header ================= */
-function vWizHeader(title, isFirst, step, total){
+function vWizHeader(title, isFirst, step, total, backAct){
+  backAct = backAct || 'wiz-back';
   return `
   <div class="wiz-header row between">
-    <button class="iconbtn" data-act="wiz-back" aria-label="${isFirst?'Stäng':'Tillbaka'}">${isFirst?ICON.x:ICON.chevronLeft}</button>
+    <button class="iconbtn" data-act="${backAct}" aria-label="${isFirst?'Stäng':'Tillbaka'}">${isFirst?ICON.x:ICON.chevronLeft}</button>
     <div class="wiz-title">${esc(title)}</div>
     <div style="width:44px"></div>
   </div>
@@ -560,6 +629,129 @@ function vWizFooter(){
   return '';
 }
 
+/* ================= Job-detaljvy ================= */
+let jobPhotos=[], jobMaterials=[], photoObjectUrls={};
+async function loadJobDetail(id){
+  jobPhotos = await dbByJob('photos', id);
+  jobMaterials = await dbByJob('materials', id);
+  Object.values(photoObjectUrls).forEach(u=>URL.revokeObjectURL(u));
+  photoObjectUrls = {};
+  jobPhotos.forEach(p=>{ photoObjectUrls[p.id] = URL.createObjectURL(p.blob); });
+}
+function materialTotals(job){
+  const cost = jobMaterials.reduce((sum,m)=>sum + (Number(m.qty)||0) * (Number(m.unitPrice)||0), 0);
+  const markup = job.markupPercent ?? 15;
+  const markupSum = cost * (markup/100);
+  return { cost, markup, markupSum, total: cost + markupSum };
+}
+function fmtKr(n){ return Math.round(n).toLocaleString('sv-SE') + ' kr'; }
+
+function vJobDetail(id){
+  const job = jobById(id);
+  if(!job) return `${vWizHeader('Uppdrag', true)}<div class="wiz-body"><p class="muted">Uppdraget hittades inte.</p></div>`;
+  const c = customerOf(job);
+  const s = statusLabel(job.status);
+  const t = materialTotals(job);
+
+  const photosHtml = `
+    <div class="photo-grid">
+      ${jobPhotos.map(p=>`
+        <button class="photo-thumb" data-act="open-photo" data-id="${p.id}">
+          <img src="${photoObjectUrls[p.id]}" alt="">
+          ${p.comment?'':''}
+        </button>`).join('')}
+      <label class="photo-add">
+        ${ICON.camera}
+        <span>Lägg till</span>
+        <input type="file" accept="image/*" capture="environment" data-photo-input="1">
+      </label>
+    </div>
+    ${st.openPhoto ? (()=>{
+      const p = jobPhotos.find(x=>x.id===st.openPhoto); if(!p) return '';
+      return `
+      <div class="card photo-comment-card">
+        <img src="${photoObjectUrls[p.id]}" alt="">
+        <span class="label">Kommentar</span>
+        <textarea placeholder="Skriv en kommentar till fotot…" data-field="photo-comment" data-id="${p.id}">${esc(p.comment)}</textarea>
+        <div class="row between" style="margin-top:10px">
+          <button class="muted" style="font-size:13px" data-act="close-photo">Stäng</button>
+          <button class="row gap-xs" style="color:var(--pri-urgent);font-size:13px" data-act="delete-photo" data-id="${p.id}">${ICON.trash}<span>Ta bort foto</span></button>
+        </div>
+      </div>`;
+    })() : ''}`;
+
+  const materialRows = jobMaterials.map(m=>`
+    <div class="material-row">
+      <div class="material-info">
+        <div class="material-name">${esc(m.name)}</div>
+        <div class="material-sub">${[m.description, m.eNr?('E-nr '+m.eNr):''].filter(Boolean).map(esc).join(' · ')}</div>
+      </div>
+      <div class="material-cols">
+        <div><div class="lbl">Antal</div><div>${esc(m.qty)} ${esc(m.unit)}</div></div>
+        <div><div class="lbl">Á-pris</div><div>${fmtKr(m.unitPrice)}</div></div>
+        <div><div class="lbl">Summa</div><div class="bold">${fmtKr((Number(m.qty)||0)*(Number(m.unitPrice)||0))}</div></div>
+      </div>
+      <button class="material-del" data-act="delete-material" data-id="${m.id}">${ICON.trash}</button>
+    </div>`).join('');
+
+  const addForm = st.addingMaterial ? `
+    <div class="add-form">
+      <div class="field-mic">
+        <input type="text" placeholder="Namn på artikel" id="matName" value="${esc(st.matDraft?.name||'')}" data-field="mat-name">
+        <button class="iconbtn mic-inline" data-act="dictate-material" aria-label="Diktera">${ICON.mic}</button>
+      </div>
+      <input type="text" placeholder="E-nummer (valfritt)" value="${esc(st.matDraft?.eNr||'')}" data-field="mat-enr">
+      <div class="row2">
+        <input type="number" inputmode="decimal" placeholder="Antal" value="${esc(st.matDraft?.qty||'')}" data-field="mat-qty">
+        <input type="number" inputmode="decimal" placeholder="Á-pris (kr)" value="${esc(st.matDraft?.unitPrice||'')}" data-field="mat-price">
+      </div>
+      <div class="row between">
+        <button class="muted" style="font-size:13px" data-act="cancel-material">Avbryt</button>
+        <button class="primary-btn" style="width:auto;padding:0 20px" data-act="save-material">Lägg till</button>
+      </div>
+    </div>` : '';
+
+  return `
+  ${vWizHeader(job.title, false, undefined, undefined, 'job-back')}
+  <div class="job-body">
+    <div class="card">
+      <div class="row between" style="margin-bottom:10px">
+        <span class="pill ${s.on?'on':''}">${s.l}</span>
+        <span class="row gap-xs"><span class="dot" style="background:${PRIORITY_COLOR[job.priority]}"></span>${PRIORITY_LABEL[job.priority]}</span>
+      </div>
+      <div class="bold" style="font-size:17px">${esc(c?c.name:'')}</div>
+      ${c && c.address ? `<div class="muted row gap-xs" style="margin-top:4px">${ICON.pin}<span>${esc(c.address)}</span></div>` : ''}
+      <div class="muted row gap-xs" style="margin-top:6px">${ICON.clock}<span>${esc(fmtDateTime(job.plannedAt))}</span></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Foton</div>
+      ${photosHtml}
+    </div>
+
+    <div class="section">
+      <div class="section-title">Materiallista</div>
+      <div class="actions-row">
+        <button class="tile row-tile" data-act="toggle-add-material">${ICON.box}<span class="t-text">Lägg till artikel<span class="t-sub" style="display:block">Ange manuellt</span></span></button>
+        <button class="tile row-tile off">${ICON.cart}<span class="t-text">Importera order<span class="t-sub" style="display:block">Ahlsell – kommer snart</span></span></button>
+      </div>
+      ${addForm}
+      ${jobMaterials.length? `<div class="card" style="margin-top:16px;padding:4px 16px">${materialRows}</div>` : `<p class="empty" style="padding-left:0;margin-top:16px">Inga artiklar tillagda än.</p>`}
+      <div class="summary-card">
+        <div class="row between"><span class="muted">Materialkostnad</span><span>${fmtKr(t.cost)}</span></div>
+        <div class="row between" style="margin-top:6px">
+          <span class="muted">Påslag</span>
+          <span class="row gap-xs"><input type="number" inputmode="decimal" value="${job.markupPercent}" data-field="markup" style="width:56px;padding:4px 8px;min-height:0;text-align:right">%</span>
+        </div>
+        <div class="summary-total"><span>Totalt</span><span>${fmtKr(t.total)}</span></div>
+      </div>
+      <div style="margin-top:16px">
+        <button class="primary-btn" data-act="save-materialplan">${ICON.save}<span>Spara materialplan</span></button>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ================= Render dispatch ================= */
 function render(){
   if(st.view==='opening'){ $app.innerHTML = vOpening(); afterOpening(); return; }
@@ -569,6 +761,7 @@ function render(){
     $app.innerHTML = stepView + vWizFooter();
     return;
   }
+  if(st.view==='job'){ $app.innerHTML = vJobDetail(st.id); return; }
 }
 
 /* ================= Events ================= */
@@ -587,6 +780,32 @@ $app.addEventListener('input', e=>{
   if(f==='description'){ draft.description=t.value; return; }
   if(f==='plannedDate'){ draft.plannedDate=t.value; return; }
   if(f==='plannedTime'){ draft.plannedTime=t.value; return; }
+
+  if(f==='photo-comment'){ updatePhotoComment(t.dataset.id, t.value); return; }
+  if(f==='mat-name'){ st.matDraft=st.matDraft||{}; st.matDraft.name=t.value; return; }
+  if(f==='mat-enr'){ st.matDraft=st.matDraft||{}; st.matDraft.eNr=t.value; return; }
+  if(f==='mat-qty'){ st.matDraft=st.matDraft||{}; st.matDraft.qty=t.value; return; }
+  if(f==='mat-price'){ st.matDraft=st.matDraft||{}; st.matDraft.unitPrice=t.value; return; }
+  if(f==='markup'){
+    const job=jobById(st.id); if(!job) return;
+    const percent = Number(t.value)||0;
+    setJobMarkup(st.id, percent);
+    const totalEl = $app.querySelector('.summary-total span:last-child');
+    if(totalEl){ job.markupPercent=percent; totalEl.textContent = fmtKr(materialTotals(job).total); }
+    return;
+  }
+});
+
+$app.addEventListener('change', async e=>{
+  const t=e.target;
+  if(t.dataset.photoInput && t.files && t.files[0]){
+    const file = t.files[0];
+    t.value='';
+    const p = await addPhoto(st.id, file, '');
+    jobPhotos.push(p);
+    photoObjectUrls[p.id] = URL.createObjectURL(file);
+    flash('Foto sparat'); render();
+  }
 });
 
 // Updates only the Nästa-button's disabled state and the missing-fields hint,
@@ -611,7 +830,11 @@ $app.addEventListener('click', async e=>{
   const a=b.dataset.act;
 
   if(a==='new-job'){ draft=emptyDraft(); searchQuery=''; st={view:'wizard', step:0}; return render(); }
-  if(a==='open-job'){ flash('Detaljvy kommer i ett senare steg'); return; }
+  if(a==='open-job'){
+    const id=b.dataset.id; await loadJobDetail(id);
+    st={view:'job', id}; return render();
+  }
+  if(a==='job-back'){ st={view:'home'}; return render(); }
 
   if(a==='wiz-back'){
     if(st.step===0){ st={view:'home'}; return render(); }
@@ -644,12 +867,53 @@ $app.addEventListener('click', async e=>{
       });
       customerId = c.id;
     }
-    await createJob({
+    const job = await createJob({
       customerId, kind: draft.kind||'customer_job', title: draft.title.trim(), workType: draft.workType,
       description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority
     });
     flash('Uppdrag skapat');
-    st={view:'home'}; return render();
+    await loadJobDetail(job.id);
+    st={view:'job', id:job.id}; return render();
+  }
+
+  /* ---- foton ---- */
+  if(a==='open-photo'){ st.openPhoto=b.dataset.id; return render(); }
+  if(a==='close-photo'){ st.openPhoto=null; return render(); }
+  if(a==='delete-photo'){
+    await deletePhoto(b.dataset.id);
+    URL.revokeObjectURL(photoObjectUrls[b.dataset.id]); delete photoObjectUrls[b.dataset.id];
+    jobPhotos = jobPhotos.filter(p=>p.id!==b.dataset.id);
+    st.openPhoto=null; flash('Foto borttaget'); return render();
+  }
+
+  /* ---- materiallista ---- */
+  if(a==='toggle-add-material'){ st.addingMaterial=!st.addingMaterial; st.matDraft=st.matDraft||{}; return render(); }
+  if(a==='cancel-material'){ st.addingMaterial=false; st.matDraft={}; return render(); }
+  if(a==='save-material'){
+    const d = st.matDraft||{};
+    if(!d.name || !String(d.name).trim()){ flash('Ange ett namn på artikeln'); return; }
+    await addMaterial(st.id, { name:String(d.name).trim(), eNr:d.eNr||'', qty:Number(d.qty)||0, unit:'st', unitPrice:Number(d.unitPrice)||0 });
+    jobMaterials = await dbByJob('materials', st.id);
+    st.addingMaterial=false; st.matDraft={};
+    flash('Artikel tillagd'); return render();
+  }
+  if(a==='delete-material'){
+    await deleteMaterial(b.dataset.id);
+    jobMaterials = jobMaterials.filter(m=>m.id!==b.dataset.id);
+    return render();
+  }
+  if(a==='save-materialplan'){ flash('Materialplan sparad'); return; }
+  if(a==='dictate-material'){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ flash('Diktering stöds inte i den här webbläsaren – använd tangentbordets mikrofon'); return; }
+    const rec = new SR(); rec.lang='sv-SE'; rec.interimResults=false;
+    rec.onresult = (ev)=>{
+      const text = ev.results[0][0].transcript;
+      st.matDraft = st.matDraft||{}; st.matDraft.name = text; render();
+    };
+    rec.onerror = ()=>flash('Kunde inte tolka talet, försök igen');
+    rec.start();
+    return;
   }
 });
 
