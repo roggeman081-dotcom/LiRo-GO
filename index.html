@@ -512,11 +512,12 @@ function customerOf(j){ return customers.find(c=>c.id===j.customerId); }
 
 /* ================= Formattering ================= */
 function greeting(){ const h=new Date().getHours(); if(h<10) return 'God morgon'; if(h<17) return 'Hej'; return 'God kväll'; }
-function formatDate(){
+function formatDateFor(d){
   const days=['söndag','måndag','tisdag','onsdag','torsdag','fredag','lördag'];
   const months=['januari','februari','mars','april','maj','juni','juli','augusti','september','oktober','november','december'];
-  const n=new Date(); return `${days[n.getDay()]} ${n.getDate()} ${months[n.getMonth()]}`;
+  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
 }
+function formatDate(){ return formatDateFor(new Date()); }
 function fmtTimeRange(plannedAt){
   if(!plannedAt) return 'Ingen tid vald';
   const s=new Date(plannedAt), e=new Date(s.getTime()+4*3600000);
@@ -556,6 +557,7 @@ const $app = document.getElementById('app');
 function pushNav(){ history.pushState({}, ''); }
 function closeTopLayer(){
   if(settingsOpen){ settingsOpen=false; return; }
+  if(calendarOpen){ calendarOpen=false; return; }
   if(st.openPhoto){ st.openPhoto=null; return; }
   if(st.matPanel){
     if(st.matPanelMode && st.matPanelMode!=='browse'){ st.matPanelMode='browse'; st.matDraft={}; return; }
@@ -674,9 +676,12 @@ function vHome(){
     <img src="logo-mark.png" class="brand-mini" alt="LIRO">
     <div class="row gap-xs">${ICON.sync}<span class="muted" style="font-size:13px">Sparat lokalt</span></div>
   </div>
-  <div class="greeting">
-    <div class="date">${esc(formatDate())}</div>
-    <div class="h1">${esc(greeting())}, Rogge</div>
+  <div class="greeting row between">
+    <div>
+      <div class="date">${esc(formatDate())}</div>
+      <div class="h1">${esc(greeting())}, Rogge</div>
+    </div>
+    <button class="iconbtn" style="width:48px;height:48px;flex:0 0 48px" aria-label="Kalender" data-act="open-calendar">${ICON.calendar}</button>
   </div>
   <div class="idag">
     <div class="row between idag-head">
@@ -1205,6 +1210,50 @@ function vMaterialPanel(job){
   </div>`;
 }
 
+/* ================= Kalender (agenda-lista över alla uppdrag) ================= */
+function vCalendarPanel(){
+  const withDate = jobs.filter(j=>j.plannedAt).sort((a,b)=>a.plannedAt.localeCompare(b.plannedAt));
+  const withoutDate = jobs.filter(j=>!j.plannedAt);
+
+  const groups = [];
+  for(const j of withDate){
+    const d = new Date(j.plannedAt);
+    const key = d.toDateString();
+    let g = groups.find(x=>x.key===key);
+    if(!g){ g = { key, label: formatDateFor(d), jobs: [] }; groups.push(g); }
+    g.jobs.push(j);
+  }
+  if(withoutDate.length) groups.push({ key:'none', label:'Ingen tid vald', jobs: withoutDate });
+
+  const jobRow = j => {
+    const c = customerOf(j);
+    return `
+    <button class="row gap-sm" style="width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line)" data-act="open-job" data-id="${j.id}">
+      <div class="icon-circle" style="width:36px;height:36px;flex:0 0 36px">${ICON.wrench}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:15px">${esc(j.title)}</div>
+        <div class="muted" style="font-size:12px;margin-top:2px">${c?esc(c.name)+' · ':''}${esc(fmtTimeRange(j.plannedAt))}</div>
+      </div>
+    </button>`;
+  };
+
+  const body = groups.length ? groups.map(g=>`
+    <div class="section-title" style="margin-top:18px">${esc(g.label)}</div>
+    <div class="card" style="padding:2px 16px">${g.jobs.map(jobRow).join('')}</div>
+  `).join('') : `<p class="empty" style="padding-left:0;margin-top:16px">Inga uppdrag ännu.</p>`;
+
+  return `
+  <div class="mat-panel">
+    <div class="mat-panel-head">
+      <div class="mat-panel-title">
+        <h1>Kalender</h1>
+        <button class="iconbtn" data-act="close-calendar" aria-label="Stäng">${ICON.x}</button>
+      </div>
+    </div>
+    <div class="mat-panel-list">${body}</div>
+  </div>`;
+}
+
 function vSettingsPanel(){
   const key = getAiKey();
   const model = getAiModel();
@@ -1256,9 +1305,10 @@ function vAiResults(){
 
 /* ================= Render dispatch ================= */
 let settingsOpen = false;
+let calendarOpen = false;
 function render(){
   if(st.view==='opening'){ $app.innerHTML = vOpening(); afterOpening(); return; }
-  if(st.view==='home'){ $app.innerHTML = vHome() + (settingsOpen?vSettingsPanel():''); afterHome(); return; }
+  if(st.view==='home'){ $app.innerHTML = vHome() + (calendarOpen?vCalendarPanel():'') + (settingsOpen?vSettingsPanel():''); afterHome(); return; }
   if(st.view==='wizard'){
     const stepView = [vStepKind, vStepCustomer, vStepDetails, vStepSummary][st.step]();
     $app.innerHTML = stepView + vWizFooter() + (settingsOpen?vSettingsPanel():'');
@@ -1359,6 +1409,7 @@ $app.addEventListener('click', async e=>{
   if(a==='new-job'){ draft=emptyDraft(); searchQuery=''; st={view:'wizard', step:0}; pushNav(); return render(); }
   if(a==='open-job'){
     const id=b.dataset.id; await loadJobDetail(id);
+    calendarOpen=false;
     st={view:'job', id}; pushNav(); return render();
   }
   if(a==='job-back'){ history.back(); return; }
@@ -1476,6 +1527,8 @@ $app.addEventListener('click', async e=>{
   /* ---- inställningar ---- */
   if(a==='open-settings'){ settingsOpen=true; pushNav(); return render(); }
   if(a==='close-settings'){ history.back(); return; }
+  if(a==='open-calendar'){ calendarOpen=true; pushNav(); return render(); }
+  if(a==='close-calendar'){ history.back(); return; }
   if(a==='choose-model'){ setAiModel(b.dataset.model); return render(); }
   if(a==='clear-ai-key'){ setAiKey(''); flash('Nyckel borttagen'); return render(); }
   if(a==='toggle-fav'){ toggleFavoriteArtnr(b.dataset.artnr); return render(); }
