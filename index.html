@@ -154,7 +154,7 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .add-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .mic-inline{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px}
 .field-mic{position:relative}
-.field-mic input{padding-right:44px}
+.field-mic input,.field-mic textarea{padding-right:44px}
 
 /* ---- registrera material (panel) ---- */
 .mat-panel{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column;max-width:520px;margin:0 auto}
@@ -186,6 +186,17 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .snabbval{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px));flex:0 0 auto;border-top:1px solid var(--line)}
 .snabbval button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:16px;background:var(--surface);font-size:12px;color:var(--text);text-align:center}
 .snabbval button svg{width:20px;height:20px;color:var(--accent)}
+.snabbval.cols4{grid-template-columns:repeat(4,1fr)}
+.ai-suggest-box{background:var(--surface);border-radius:20px;padding:14px;margin-bottom:12px}
+.ai-suggest-box textarea{min-height:60px}
+
+/* ---- inställningar (panel) ---- */
+.settings-body{flex:1;overflow-y:auto;padding:4px 16px 24px}
+.settings-note{font-size:13px;color:var(--muted);line-height:1.5}
+.settings-note a{color:var(--accent)}
+.model-choice{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.model-opt{display:flex;justify-content:space-between;align-items:center;padding:14px;border-radius:14px;background:var(--surface);border:1px solid transparent}
+.model-opt.on{border-color:var(--accent)}
 #status{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);font-size:13px;font-weight:700;color:var(--ink);background:var(--text);border-radius:999px;padding:6px 14px;pointer-events:none;transition:opacity .3s;opacity:0;z-index:60}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -226,7 +237,8 @@ const ICON = {
   starFill:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>',
   barcode:'<svg class="i" viewBox="0 0 24 24"><path d="M4 5v14M8 5v14M11 5v14M15 5v14M18 5v14M21 5v14" stroke-width="1.4"/></svg>',
   minus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
-  plusSmall:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
+  plusSmall:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  sparkle:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>'
 };
 
 /* ================= Data ================= */
@@ -375,6 +387,67 @@ async function bumpMaterialQty(jobId, row, delta){
   }
   return 0;
 }
+
+/* ---- AI-förslag (Claude API, egen nyckel, direkt från webbläsaren) ---- */
+const AI_MODEL_DEFAULT = 'claude-haiku-4-5';
+function getAiKey(){ return localStorage.getItem('lirogo_ai_key') || ''; }
+function setAiKey(k){ if(k) localStorage.setItem('lirogo_ai_key', k); else localStorage.removeItem('lirogo_ai_key'); }
+function getAiModel(){ return localStorage.getItem('lirogo_ai_model') || AI_MODEL_DEFAULT; }
+function setAiModel(m){ localStorage.setItem('lirogo_ai_model', m); }
+
+async function fetchAiSuggestions(description){
+  const key = getAiKey();
+  if(!key) throw new Error('no-key');
+  const system = 'Du är en erfaren svensk elektriker. Utifrån en kort beskrivning av ett arbete, lista 5-10 typiska elmaterial-komponenter som troligen behövs. Svara ENDAST med en JSON-array av korta svenska produktbeskrivningar (utan priser eller artikelnummer), t.ex. ["Automatsäkring 10A 1-pol","Jordfelsbrytare 25A 30mA","Kabelkanal 40x25mm"]. Inget annat i svaret, ingen förklaringstext.';
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: getAiModel(),
+      max_tokens: 1024,
+      system,
+      messages: [{ role:'user', content: description }]
+    })
+  });
+  if(!res.ok){
+    let msg = 'API-fel ('+res.status+')';
+    if(res.status===401) msg = 'Ogiltig API-nyckel';
+    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const textBlock = (data.content||[]).find(b=>b.type==='text');
+  const text = textBlock ? textBlock.text : '';
+  const match = text.match(/\[[\s\S]*\]/);
+  if(!match) return [];
+  try{ const arr = JSON.parse(match[0]); return Array.isArray(arr) ? arr.filter(x=>typeof x==='string') : []; }
+  catch{ return []; }
+}
+
+/* Matchar AI:ns fria textförslag ("Automatsäkring 10A 1-pol") mot riktiga
+   rader i Ahlsell-katalogen. Katalognamnen är korta/förkortade, så vi söker
+   på det mest utmärkande ordet i förslaget (oftast produkttypen, först i
+   frasen) istället för hela frasen ordagrant. */
+function keywordFor(suggestion){
+  const words = suggestion.split(/\s+/).filter(w=>w.replace(/[^A-ZÅÄÖa-zåäö]/g,'').length>=4);
+  if(!words.length) return suggestion;
+  return words.reduce((a,b)=> b.length>a.length ? b : a, words[0]);
+}
+function matchSuggestionsToCatalog(suggestions){
+  const matched = [];
+  const seen = new Set();
+  for(const s of suggestions){
+    const kw = keywordFor(s);
+    const hits = searchCatalog(kw, 3);
+    if(hits.length && !seen.has(hits[0][0])){ seen.add(hits[0][0]); matched.push(hits[0]); }
+  }
+  return matched;
+}
+
 async function addMaterial(jobId, input){
   const m={ id:uid(), jobId, name:input.name, description:input.description||'', eNr:input.eNr||'',
     qty:input.qty||0, unit:input.unit||'st', unitPrice:input.unitPrice||0, createdAt:new Date().toISOString() };
@@ -547,7 +620,7 @@ function vHome(){
   <div class="home-footer">
     <button class="primary-btn" style="flex:1" data-act="new-job">${ICON.plus}<span>Nytt uppdrag</span></button>
     <button class="iconbtn" aria-label="Diktera">${ICON.mic}</button>
-    <button class="iconbtn" aria-label="Meny">${ICON.menu}</button>
+    <button class="iconbtn" aria-label="Meny" data-act="open-settings">${ICON.menu}</button>
   </div>`;
 }
 function afterHome(){
@@ -941,6 +1014,33 @@ function vMaterialPanel(job){
     </div>`;
   }
 
+  if(mode === 'ai'){
+    return `
+    <div class="mat-panel">
+      <div class="mat-panel-head">
+        <div class="mat-panel-title">
+          <h1>AI-förslag</h1>
+          <button class="iconbtn" data-act="close-mat-panel" aria-label="Stäng">${ICON.x}</button>
+        </div>
+        <div class="mat-panel-sub">${esc(job.title)}</div>
+      </div>
+      <div class="mat-panel-list">
+        <div class="ai-suggest-box">
+          <span class="label">Beskriv arbetet</span>
+          <div class="field-mic">
+            <textarea placeholder="T.ex. Ny elcentral med 12 grupper, jordfelsbrytare och belysningsgrupper" data-field="ai-desc" autocomplete="off">${esc(st.aiDesc||'')}</textarea>
+            <button class="iconbtn mic-inline" data-act="dictate-ai" aria-label="Diktera" style="top:24px;transform:none">${ICON.mic}</button>
+          </div>
+          <div style="margin-top:12px">
+            <button class="primary-btn" data-act="ai-suggest">${ICON.sparkle}<span>${st.aiLoading?'Tänker…':'Föreslå material'}</span></button>
+          </div>
+        </div>
+        <div id="aiResults">${vAiResults()}</div>
+      </div>
+      <div class="snabbval" style="grid-template-columns:1fr"><button data-act="back-to-browse">${ICON.search}<span>Tillbaka</span></button></div>
+    </div>`;
+  }
+
   return `
   <div class="mat-panel">
     <div class="mat-panel-head">
@@ -960,24 +1060,75 @@ function vMaterialPanel(job){
       </div>
     </div>
     <div class="mat-panel-list" id="matPanelList">${vMatPanelList()}</div>
-    <div class="snabbval">
-      <button data-act="switch-to-manual">${ICON.box}<span>Lägg till manuellt</span></button>
-      <button data-act="scan-barcode">${ICON.barcode}<span>Skanna streckkod</span></button>
-      <button data-act="dictate-material">${ICON.mic}<span>Diktera material</span></button>
+    <div class="snabbval cols4">
+      <button data-act="switch-to-manual">${ICON.box}<span>Manuellt</span></button>
+      <button data-act="scan-barcode">${ICON.barcode}<span>Streckkod</span></button>
+      <button data-act="dictate-material">${ICON.mic}<span>Diktera</span></button>
+      <button data-act="switch-to-ai">${ICON.sparkle}<span>AI-förslag</span></button>
     </div>
   </div>`;
 }
 
+function vSettingsPanel(){
+  const key = getAiKey();
+  const model = getAiModel();
+  return `
+  <div class="mat-panel">
+    <div class="mat-panel-head">
+      <div class="mat-panel-title">
+        <h1>Inställningar</h1>
+        <button class="iconbtn" data-act="close-settings" aria-label="Stäng">${ICON.x}</button>
+      </div>
+    </div>
+    <div class="settings-body">
+      <div class="section">
+        <div class="section-title" style="font-size:16px">${ICON.sparkle} AI-förslag</div>
+        <p class="settings-note">
+          Med en egen Anthropic API-nyckel kan appen föreslå material utifrån en beskrivning av jobbet
+          (t.ex. "ny elcentral 12 grupper"). Nyckeln sparas bara lokalt i den här webbläsaren och
+          skickas aldrig till oss — bara direkt till Anthropic när du ber om förslag.
+        </p>
+        <p class="settings-note" style="margin-top:8px">
+          Ingen nyckel än? Skapa en gratis på
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a>.
+        </p>
+        <div class="field" style="margin-top:16px">
+          <span class="label">API-nyckel</span>
+          <input type="password" placeholder="sk-ant-…" value="${esc(key)}" data-field="ai-key" autocomplete="off">
+        </div>
+        <div class="model-choice">
+          <button class="model-opt ${model==='claude-haiku-4-5'?'on':''}" data-act="choose-model" data-model="claude-haiku-4-5">
+            <span><b>Haiku 4.5</b><br><span class="muted" style="font-size:12px">Billigast, snabb — bra för materialförslag</span></span>
+          </button>
+          <button class="model-opt ${model==='claude-opus-5'?'on':''}" data-act="choose-model" data-model="claude-opus-5">
+            <span><b>Opus 5</b><br><span class="muted" style="font-size:12px">Bäst kvalitet, betydligt dyrare per förfrågan</span></span>
+          </button>
+        </div>
+        ${key ? `<button class="muted" style="font-size:13px;margin-top:16px" data-act="clear-ai-key">Ta bort nyckel</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function vAiResults(){
+  if(st.aiLoading) return `<p class="muted" style="padding:8px 0">Tänker…</p>`;
+  if(st.aiError) return `<p class="muted" style="padding:8px 0">${esc(st.aiError)}</p>`;
+  if(!st.aiMatches) return '';
+  if(!st.aiMatches.length) return `<p class="muted" style="padding:8px 0">Inga matchande artiklar hittades i katalogen för förslagen.</p>`;
+  return `<div class="label" style="margin-bottom:4px">Förslag från AI, matchade mot katalogen</div>` + st.aiMatches.map(vMatQtyRow).join('');
+}
+
 /* ================= Render dispatch ================= */
+let settingsOpen = false;
 function render(){
   if(st.view==='opening'){ $app.innerHTML = vOpening(); afterOpening(); return; }
-  if(st.view==='home'){ $app.innerHTML = vHome(); afterHome(); return; }
+  if(st.view==='home'){ $app.innerHTML = vHome() + (settingsOpen?vSettingsPanel():''); afterHome(); return; }
   if(st.view==='wizard'){
     const stepView = [vStepKind, vStepCustomer, vStepDetails, vStepSummary][st.step]();
-    $app.innerHTML = stepView + vWizFooter();
+    $app.innerHTML = stepView + vWizFooter() + (settingsOpen?vSettingsPanel():'');
     return;
   }
-  if(st.view==='job'){ $app.innerHTML = vJobDetail(st.id); return; }
+  if(st.view==='job'){ $app.innerHTML = vJobDetail(st.id) + (settingsOpen?vSettingsPanel():''); return; }
 }
 
 /* ================= Events ================= */
@@ -1015,6 +1166,8 @@ $app.addEventListener('input', e=>{
     if(totalEl){ job.markupPercent=percent; totalEl.textContent = fmtKr(materialTotals(job).total); }
     return;
   }
+  if(f==='ai-key'){ setAiKey(t.value.trim()); return; }
+  if(f==='ai-desc'){ st.aiDesc = t.value; return; }
 });
 
 $app.addEventListener('change', async e=>{
@@ -1128,7 +1281,44 @@ $app.addEventListener('click', async e=>{
   if(a==='close-mat-panel'){ st.matPanel=false; return render(); }
   if(a==='set-mat-tab'){ st.matTab=b.dataset.tab; st.matSearch=''; return render(); }
   if(a==='switch-to-manual'){ st.matPanelMode='manual'; st.matDraft=st.matDraft||{}; return render(); }
+  if(a==='switch-to-ai'){
+    if(!getAiKey()){ settingsOpen=true; st.matPanel=false; flash('Lägg till en API-nyckel för AI-förslag'); return render(); }
+    st.matPanelMode='ai'; st.aiMatches=null; st.aiError=null; return render();
+  }
   if(a==='back-to-browse'){ st.matPanelMode='browse'; st.matDraft={}; return render(); }
+  if(a==='ai-suggest'){
+    const desc = (st.aiDesc||'').trim();
+    if(!desc){ flash('Beskriv arbetet först'); return; }
+    st.aiLoading=true; st.aiError=null; st.aiMatches=null; render();
+    (async()=>{
+      try{
+        const suggestions = await fetchAiSuggestions(desc);
+        st.aiMatches = matchSuggestionsToCatalog(suggestions);
+      }catch(err){
+        st.aiError = err.message==='no-key' ? 'Ingen API-nyckel inlagd'
+          : err.message==='Failed to fetch' ? 'Kunde inte nå Anthropics API — kontrollera nätet'
+          : (err.message||'Något gick fel');
+      }
+      st.aiLoading=false;
+      render();
+    })();
+    return;
+  }
+  if(a==='dictate-ai'){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ flash('Diktering stöds inte i den här webbläsaren'); return; }
+    const rec = new SR(); rec.lang='sv-SE'; rec.interimResults=false;
+    rec.onresult = (ev)=>{ st.aiDesc = ev.results[0][0].transcript; render(); };
+    rec.onerror = ()=>flash('Kunde inte tolka talet, försök igen');
+    rec.start();
+    return;
+  }
+
+  /* ---- inställningar ---- */
+  if(a==='open-settings'){ settingsOpen=true; return render(); }
+  if(a==='close-settings'){ settingsOpen=false; return render(); }
+  if(a==='choose-model'){ setAiModel(b.dataset.model); return render(); }
+  if(a==='clear-ai-key'){ setAiKey(''); flash('Nyckel borttagen'); return render(); }
   if(a==='toggle-fav'){ toggleFavoriteArtnr(b.dataset.artnr); return render(); }
   if(a==='bump-qty'){
     const row = catalogRow(b.dataset.artnr); if(!row) return;
