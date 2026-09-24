@@ -888,19 +888,24 @@ function vJobDetail(id){
       </div>`;
     })() : ''}`;
 
-  const materialRows = jobMaterials.map(m=>`
-    <div class="material-row">
+  const materialRows = jobMaterials.map(m=>{
+    const myPrice = (Number(m.qty)||0) * (Number(m.unitPrice)||0);
+    const markupAmt = myPrice * ((job.markupPercent||0)/100);
+    const customerPrice = myPrice + markupAmt;
+    return `
+    <div class="material-row" data-mid="${m.id}" data-myprice="${myPrice}">
       <div class="material-info">
         <div class="material-name">${esc(m.name)}</div>
-        <div class="material-sub">${[m.description, m.eNr?('E-nr '+m.eNr):''].filter(Boolean).map(esc).join(' · ')}</div>
+        <div class="material-sub">${[m.eNr?('E-nr '+esc(m.eNr)):'', esc(m.qty)+' '+esc(m.unit), m.description?esc(m.description):''].filter(Boolean).join(' · ')}</div>
       </div>
       <div class="material-cols">
-        <div><div class="lbl">Antal</div><div>${esc(m.qty)} ${esc(m.unit)}</div></div>
-        <div><div class="lbl">Á-pris</div><div>${fmtKr(m.unitPrice)}</div></div>
-        <div><div class="lbl">Summa</div><div class="bold">${fmtKr((Number(m.qty)||0)*(Number(m.unitPrice)||0))}</div></div>
+        <div><div class="lbl">Mitt pris</div><div>${fmtKr(myPrice)}</div></div>
+        <div><div class="lbl">Påslag</div><div class="mat-markup-val">${fmtKr(markupAmt)}</div></div>
+        <div><div class="lbl">Kund</div><div class="bold mat-customer-val">${fmtKr(customerPrice)}</div></div>
       </div>
       <button class="material-del" data-act="delete-material" data-id="${m.id}">${ICON.trash}</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   return `
   ${vWizHeader(job.title, false, undefined, undefined, 'job-back')}
@@ -937,6 +942,10 @@ function vJobDetail(id){
           <span class="row gap-xs"><input type="number" inputmode="decimal" value="${job.markupPercent}" data-field="markup" style="width:56px;padding:4px 8px;min-height:0;text-align:right">%</span>
         </div>
         <div class="summary-total"><span>Totalt</span><span>${fmtKr(t.total)}</span></div>
+        <div class="row between" style="margin-top:10px">
+          <span class="accent bold">Du tjänar</span>
+          <span class="accent bold" style="font-size:18px">${fmtKr(t.markupSum)}</span>
+        </div>
       </div>
       <div style="margin-top:16px">
         <button class="primary-btn" data-act="save-materialplan">${ICON.save}<span>Spara materialplan</span></button>
@@ -1161,9 +1170,24 @@ $app.addEventListener('input', e=>{
   if(f==='markup'){
     const job=jobById(st.id); if(!job) return;
     const percent = Number(t.value)||0;
+    job.markupPercent=percent;
     setJobMarkup(st.id, percent);
+    const totals = materialTotals(job);
     const totalEl = $app.querySelector('.summary-total span:last-child');
-    if(totalEl){ job.markupPercent=percent; totalEl.textContent = fmtKr(materialTotals(job).total); }
+    if(totalEl) totalEl.textContent = fmtKr(totals.total);
+    $app.querySelectorAll('.summary-card .row.between').forEach(row=>{
+      const label = row.querySelector('.accent');
+      if(label && label.textContent==='Du tjänar'){ row.querySelector('span:last-child').textContent = fmtKr(totals.markupSum); }
+    });
+    $app.querySelectorAll('.material-row').forEach(rowEl=>{
+      const myPrice = Number(rowEl.dataset.myprice)||0;
+      const markupAmt = myPrice * (percent/100);
+      const customerPrice = myPrice + markupAmt;
+      const mEl = rowEl.querySelector('.mat-markup-val');
+      const cEl = rowEl.querySelector('.mat-customer-val');
+      if(mEl) mEl.textContent = fmtKr(markupAmt);
+      if(cEl) cEl.textContent = fmtKr(customerPrice);
+    });
     return;
   }
   if(f==='ai-key'){ setAiKey(t.value.trim()); return; }
