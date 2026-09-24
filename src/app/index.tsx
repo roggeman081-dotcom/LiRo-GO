@@ -17,12 +17,10 @@ import { JobCard } from "@/components/JobCard";
 import { LiroLogo } from "@/components/LiroLogo";
 import { StepIndicator } from "@/components/StepIndicator";
 import { SyncBadge } from "@/components/SyncBadge";
-import { TimeRing } from "@/components/TimeRing";
 import { colors, spacing } from "@/theme";
 import { getTodaysJobs } from "@/data/jobs";
 import { JobWithCustomer } from "@/data/types";
 import { seedDemoDataIfEmpty } from "@/data/seed";
-import { useTimeTracking } from "@/hooks/useTimeTracking";
 import { useSyncStatus } from "@/sync/useSyncStatus";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -50,7 +48,6 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { state: syncState } = useSyncStatus();
-  const timeTracking = useTimeTracking();
   const [jobs, setJobs] = useState<JobWithCustomer[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<FlatList<JobWithCustomer>>(null);
@@ -66,11 +63,6 @@ export default function HomeScreen() {
       load();
     }, [load])
   );
-
-  const totalSeconds = Math.floor(timeTracking.elapsedSeconds);
-  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
-  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(e.nativeEvent.contentOffset.x / (CARD_WIDTH + CARD_SPACING));
@@ -89,17 +81,6 @@ export default function HomeScreen() {
           {formatDate()}
         </AppText>
         <AppText variant="title">{greeting()}, Rogge</AppText>
-      </View>
-
-      <View style={styles.ringWrapper}>
-        <TimeRing
-          progress={timeTracking.progress}
-          hours={hours}
-          minutes={minutes}
-          seconds={seconds}
-          isRunning={timeTracking.isRunning}
-          onToggle={timeTracking.toggle}
-        />
       </View>
 
       <View style={styles.jobsSection}>
@@ -127,7 +108,11 @@ export default function HomeScreen() {
             showsHorizontalScrollIndicator={false}
             snapToInterval={CARD_WIDTH + CARD_SPACING}
             decelerationRate="fast"
-            contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: CARD_SPACING }}
+            contentContainerStyle={{
+              paddingHorizontal: spacing.lg,
+              gap: CARD_SPACING,
+              alignItems: "flex-start",
+            }}
             onScroll={onScroll}
             scrollEventThrottle={16}
             renderItem={({ item }) => (
@@ -176,13 +161,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     gap: spacing.xxs,
   },
-  ringWrapper: {
-    alignItems: "center",
-    marginTop: spacing.lg,
-  },
   jobsSection: {
     flex: 1,
-    marginTop: spacing.xl,
+    marginTop: spacing.xxl,
     gap: spacing.md,
   },
   jobsHeader: {
