@@ -16,6 +16,7 @@ import {
 } from "@expo-google-fonts/barlow";
 import { colors } from "@/theme";
 import { getDb } from "@/data/db";
+import { OpeningScreen } from "@/features/opening/OpeningScreen";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -29,6 +30,7 @@ export default function RootLayout() {
     Barlow_700Bold,
   });
   const [dbReady, setDbReady] = useState(false);
+  const [showOpening, setShowOpening] = useState(true);
 
   useEffect(() => {
     getDb()
@@ -63,6 +65,7 @@ export default function RootLayout() {
               animation: "slide_from_right",
             }}
           />
+          {showOpening && <OpeningScreen onFinish={() => setShowOpening(false)} />}
         </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
