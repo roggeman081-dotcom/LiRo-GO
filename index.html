@@ -152,6 +152,22 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .summary-total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
 .add-form{background:var(--surface);border-radius:20px;padding:16px;margin-top:12px;display:flex;flex-direction:column;gap:12px}
 .add-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* ---- checklista / momentlista ---- */
+.progress-track{height:8px;border-radius:999px;background:var(--surface2);overflow:hidden;margin-top:6px}
+.progress-fill{height:100%;border-radius:999px;background:var(--accent);transition:width .2s ease}
+.job-progress{margin-top:10px}
+.checklist-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.checklist-row:last-of-type{border-bottom:0}
+.checklist-check{flex:0 0 26px;width:26px;height:26px;border-radius:50%;border:2px solid var(--muted);display:flex;align-items:center;justify-content:center;color:transparent}
+.checklist-check.done{border-color:var(--accent);background:var(--accent);color:var(--ink)}
+.checklist-check svg{width:14px;height:14px}
+.checklist-info{flex:1;min-width:0}
+.checklist-name{font-weight:600;font-size:15px}
+.checklist-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.checklist-del{flex:0 0 32px;width:32px;height:32px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center}
+.checklist-draft-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.checklist-draft-row:last-of-type{border-bottom:0}
 .mic-inline{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px}
 .field-mic{position:relative}
 .field-mic input,.field-mic textarea{padding-right:44px}
@@ -238,7 +254,8 @@ const ICON = {
   barcode:'<svg class="i" viewBox="0 0 24 24"><path d="M4 5v14M8 5v14M11 5v14M15 5v14M18 5v14M21 5v14" stroke-width="1.4"/></svg>',
   minus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   plusSmall:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
-  sparkle:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>'
+  sparkle:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4 10-10"/></svg>'
 };
 
 /* ================= Data ================= */
@@ -259,13 +276,14 @@ const PRIORITY_COLOR = {normal:'var(--pri-normal)',high:'var(--pri-high)',urgent
 let DB, customers=[], jobs=[];
 function openDB(){
   return new Promise((res,rej)=>{
-    const r=indexedDB.open('lirogo',2);
+    const r=indexedDB.open('lirogo',3);
     r.onupgradeneeded=()=>{
       const d=r.result;
       if(!d.objectStoreNames.contains('customers')) d.createObjectStore('customers',{keyPath:'id'});
       if(!d.objectStoreNames.contains('jobs')) d.createObjectStore('jobs',{keyPath:'id'});
       if(!d.objectStoreNames.contains('photos')) d.createObjectStore('photos',{keyPath:'id'}).createIndex('job','jobId');
       if(!d.objectStoreNames.contains('materials')) d.createObjectStore('materials',{keyPath:'id'}).createIndex('job','jobId');
+      if(!d.objectStoreNames.contains('checklist')) d.createObjectStore('checklist',{keyPath:'id'}).createIndex('job','jobId');
     };
     r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
   });
@@ -458,6 +476,28 @@ async function setJobMarkup(jobId, percent){
   const j=jobById(jobId); if(!j) return;
   j.markupPercent=percent; await dbPut('jobs',j);
 }
+
+/* ---- checklista / moment (t.ex. "4 uttag" som bockas av ett i taget) ---- */
+let checklist = [];
+async function addChecklistItem(jobId, input){
+  const it = { id:uid(), jobId, name:input.name, targetQty:Math.max(1, Number(input.targetQty)||1), doneQty:0, createdAt:new Date().toISOString() };
+  await dbPut('checklist', it); checklist.push(it); return it;
+}
+async function deleteChecklistItem(id){
+  await dbDel('checklist', id); checklist = checklist.filter(c=>c.id!==id);
+}
+async function bumpChecklistDone(id, delta){
+  const it = checklist.find(c=>c.id===id); if(!it) return;
+  it.doneQty = Math.max(0, Math.min(it.targetQty, (Number(it.doneQty)||0) + delta));
+  await dbPut('checklist', it);
+}
+function checklistProgress(jobId){
+  const items = checklist.filter(c=>c.jobId===jobId);
+  if(!items.length) return null;
+  const target = items.reduce((s,i)=>s+(Number(i.targetQty)||0),0);
+  const done = items.reduce((s,i)=>s+(Number(i.doneQty)||0),0);
+  return { items, target, done, percent: target>0 ? Math.round((done/target)*100) : 0 };
+}
 async function seedDemoIfEmpty(){
   if(jobs.length>0) return;
   const c=await createCustomer({name:'Karlssons Fastigheter AB', phone:'070-123 45 67', address:'Industrivägen 12', postalCode:'123 45', city:'Göteborg', saveAsContact:true});
@@ -532,7 +572,8 @@ function emptyDraft(){
   return { kind:null, method:null, existingCustomerId:null,
     newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true,
       isCompany:false,orgNumber:'',invoiceAddress:'',invoicePostalCode:'',invoiceCity:'',invoiceReference:'',glnNumber:''},
-    title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal', isQuote:false };
+    title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal', isQuote:false,
+    checklist:[] };
 }
 function draftPlannedAt(){
   if(!draft.plannedDate) return null;
@@ -601,7 +642,7 @@ function afterOpening(){
 function vHome(){
   const list = todaysJobs();
   const cards = list.map(j=>{
-    const c = customerOf(j); const s = statusLabel(j.status);
+    const c = customerOf(j); const s = statusLabel(j.status); const prog = checklistProgress(j.id);
     return `
     <div class="card jobcard">
       <div class="row between top">
@@ -619,6 +660,11 @@ function vHome(){
         </div>
       </div>
       ${c && c.address ? `<div class="row addr">${ICON.pin}<span>${esc(c.address)}</span></div>` : ''}
+      ${prog ? `
+      <div class="job-progress">
+        <div class="row between" style="font-size:12px"><span class="muted">${prog.done} av ${prog.target} klara</span><span class="bold">${prog.percent}%</span></div>
+        <div class="progress-track"><div class="progress-fill" style="width:${prog.percent}%"></div></div>
+      </div>` : ''}
       <button class="row between foot" style="width:100%" data-act="open-job" data-id="${j.id}">
         <span class="muted" style="font-size:13px">Tryck för detaljer</span>
         <span class="iconbtn filled" style="width:36px;height:36px;flex:0 0 36px">${ICON.arrowRight}</span>
@@ -805,7 +851,27 @@ function vStepDetails(){
       <span class="label">Prioritet</span>
       <div class="pri-row">${pri}</div>
     </div>
+    <div class="field">
+      <span class="label">Checklista / moment</span>
+      <span class="muted" style="font-size:12px;display:block;margin-bottom:8px">T.ex. "Uttag" med antal 4 — då visas en förloppsstapel på uppdraget som fylls i takt med att du bockar av dem.</span>
+      ${vChecklistDraftList()}
+      <div class="add-form" style="margin-top:12px">
+        <input type="text" placeholder="Namn på moment, t.ex. Uttag" value="${esc(st.clDraft?.name||'')}" data-field="cl-name" autocomplete="off">
+        <div class="row2" style="grid-template-columns:1fr auto">
+          <input type="number" inputmode="numeric" min="1" placeholder="Antal" value="${esc(st.clDraft?.qty||'')}" data-field="cl-qty">
+          <button class="primary-btn" style="padding:0 20px" data-act="add-draft-checklist-item">${ICON.plusSmall}<span>Lägg till</span></button>
+        </div>
+      </div>
+    </div>
   </div>`;
+}
+function vChecklistDraftList(){
+  if(!draft.checklist.length) return '';
+  return `<div class="card" style="padding:4px 16px">${draft.checklist.map((it,i)=>`
+    <div class="checklist-draft-row">
+      <span>${esc(it.name)} <span class="muted">× ${esc(it.targetQty)}</span></span>
+      <button class="checklist-del" data-act="delete-draft-checklist-item" data-index="${i}">${ICON.trash}</button>
+    </div>`).join('')}</div>`;
 }
 function detailsMissing(){ const m=[]; if(!draft.title.trim()) m.push('Namn på uppdrag'); return m; }
 
@@ -879,6 +945,41 @@ function materialTotals(job){
 }
 function fmtKr(n){ return Math.round(n).toLocaleString('sv-SE') + ' kr'; }
 
+function vChecklistSection(job){
+  const prog = checklistProgress(job.id);
+  const rows = (prog?prog.items:[]).map(it=>{
+    const done = it.doneQty>=it.targetQty;
+    return `
+    <div class="checklist-row" data-cid="${it.id}">
+      <button class="checklist-check ${done?'done':''}" data-act="bump-checklist" data-id="${it.id}" data-delta="1" aria-label="Bocka av" ${done?'disabled':''}>${ICON.check}</button>
+      <div class="checklist-info">
+        <div class="checklist-name">${esc(it.name)}</div>
+        <div class="checklist-sub">${it.doneQty} av ${it.targetQty} klara</div>
+      </div>
+      ${it.doneQty>0?`<button class="checklist-del" data-act="bump-checklist" data-id="${it.id}" data-delta="-1" aria-label="Ångra en">${ICON.minus}</button>`:''}
+      <button class="checklist-del" data-act="delete-checklist-item" data-id="${it.id}" aria-label="Ta bort moment">${ICON.trash}</button>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="section">
+    <div class="section-title">Checklista</div>
+    ${prog ? `
+    <div class="job-progress">
+      <div class="row between" style="font-size:13px"><span class="muted">${prog.done} av ${prog.target} klara</span><span class="bold">${prog.percent}%</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${prog.percent}%"></div></div>
+    </div>
+    <div class="card" style="margin-top:12px;padding:4px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">Ingen checklista ännu.</p>`}
+    <div class="add-form" style="margin-top:12px">
+      <input type="text" placeholder="Namn på moment, t.ex. Uttag" value="${esc(st.clDraft?.name||'')}" data-field="cl-name" autocomplete="off">
+      <div class="row2" style="grid-template-columns:1fr auto">
+        <input type="number" inputmode="numeric" min="1" placeholder="Antal" value="${esc(st.clDraft?.qty||'')}" data-field="cl-qty">
+        <button class="primary-btn" style="padding:0 20px" data-act="add-checklist-item" data-id="${job.id}">${ICON.plusSmall}<span>Lägg till</span></button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function vJobDetail(id){
   const job = jobById(id);
   if(!job) return `${vWizHeader('Uppdrag', true)}<div class="wiz-body"><p class="muted">Uppdraget hittades inte.</p></div>`;
@@ -947,6 +1048,8 @@ function vJobDetail(id){
       ${c && c.address ? `<div class="muted row gap-xs" style="margin-top:4px">${ICON.pin}<span>${esc(c.address)}</span></div>` : ''}
       <div class="muted row gap-xs" style="margin-top:6px">${ICON.clock}<span>${esc(fmtDateTime(job.plannedAt))}</span></div>
     </div>
+
+    ${vChecklistSection(job)}
 
     <div class="section">
       <div class="section-title">Foton</div>
@@ -1219,6 +1322,8 @@ $app.addEventListener('input', e=>{
   }
   if(f==='ai-key'){ setAiKey(t.value.trim()); return; }
   if(f==='ai-desc'){ st.aiDesc = t.value; return; }
+  if(f==='cl-name'){ st.clDraft=st.clDraft||{}; st.clDraft.name=t.value; return; }
+  if(f==='cl-qty'){ st.clDraft=st.clDraft||{}; st.clDraft.qty=t.value; return; }
 });
 
 $app.addEventListener('change', async e=>{
@@ -1279,6 +1384,13 @@ $app.addEventListener('click', async e=>{
   if(a==='set-worktype'){ draft.workType=b.dataset.v; return render(); }
   if(a==='set-priority'){ draft.priority=b.dataset.v; return render(); }
   if(a==='toggle-quote'){ draft.isQuote=!draft.isQuote; return render(); }
+  if(a==='add-draft-checklist-item'){
+    const d = st.clDraft||{};
+    if(!d.name || !String(d.name).trim()){ flash('Ange ett namn på momentet'); return; }
+    draft.checklist.push({ name:String(d.name).trim(), targetQty:Math.max(1, Number(d.qty)||1) });
+    st.clDraft={}; return render();
+  }
+  if(a==='delete-draft-checklist-item'){ draft.checklist.splice(Number(b.dataset.index),1); return render(); }
 
   if(a==='wiz-submit'){
     let customerId = draft.existingCustomerId;
@@ -1302,6 +1414,7 @@ $app.addEventListener('click', async e=>{
       description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority,
       isQuote: draft.isQuote
     });
+    for(const it of draft.checklist) await addChecklistItem(job.id, it);
     flash('Uppdrag skapat');
     await loadJobDetail(job.id);
     st={view:'job', id:job.id}; pushNav(); return render();
@@ -1402,6 +1515,22 @@ $app.addEventListener('click', async e=>{
     return render();
   }
   if(a==='save-materialplan'){ flash('Materialplan sparad'); return; }
+
+  /* ---- checklista ---- */
+  if(a==='add-checklist-item'){
+    const d = st.clDraft||{};
+    if(!d.name || !String(d.name).trim()){ flash('Ange ett namn på momentet'); return; }
+    await addChecklistItem(b.dataset.id, { name:String(d.name).trim(), targetQty:Math.max(1, Number(d.qty)||1) });
+    st.clDraft={}; flash('Moment tillagt'); return render();
+  }
+  if(a==='bump-checklist'){
+    await bumpChecklistDone(b.dataset.id, Number(b.dataset.delta));
+    return render();
+  }
+  if(a==='delete-checklist-item'){
+    await deleteChecklistItem(b.dataset.id);
+    return render();
+  }
   if(a==='dictate-material'){
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if(!SR){ flash('Diktering stöds inte i den här webbläsaren – använd tangentbordets mikrofon'); return; }
@@ -1424,6 +1553,7 @@ $app.addEventListener('click', async e=>{
     DB = await openDB();
     customers = await dbAll('customers');
     jobs = await dbAll('jobs');
+    checklist = await dbAll('checklist');
     await seedDemoIfEmpty();
   }catch(err){ console.error('Kunde inte öppna lagring', err); }
   render();
