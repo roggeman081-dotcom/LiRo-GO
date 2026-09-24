@@ -31,7 +31,12 @@ export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
-    getDb().then(() => setDbReady(true));
+    getDb()
+      .then(() => setDbReady(true))
+      .catch((err) => {
+        console.error("Failed to open database", err);
+        setDbReady(true);
+      });
   }, []);
 
   const ready = fontsLoaded && dbReady;
