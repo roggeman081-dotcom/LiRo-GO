@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#F7F2E9">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="LiRo GO">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -15,10 +15,10 @@
 <title>LiRo GO</title>
 <style>
 :root{
-  --bg:#000000; --surface:#121212; --surface2:#1a1a1a; --text:#f2f2f2; --muted:#8c8c8c;
-  --accent:#ffc21a; --ink:#000000; --line:#242424;
-  --pri-normal:#3dbe6b; --pri-high:#ff9a3d; --pri-urgent:#ff4d4d;
-  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); color-scheme:dark;
+  --bg:#F7F2E9; --surface:#FFFFFF; --surface2:#EFE8D9; --text:#201F1C; --muted:#8A8272;
+  --accent:#A8C93B; --ink:#1C2411; --line:#E6DFCF;
+  --pri-normal:#3D8EBE; --pri-high:#E08A2E; --pri-urgent:#D65B4A;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); color-scheme:light;
 }
 *,*::before,*::after{box-sizing:border-box}
 html{background:var(--bg)}
@@ -59,9 +59,9 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .opening.fade{opacity:0;pointer-events:none}
 .opening .mark{display:flex;flex-direction:column;align-items:center;gap:16px}
 .opening .footer{position:absolute;bottom:48px;color:var(--muted);font-size:12px}
-.open-logo{width:140px;height:auto;filter:brightness(1)}
+.open-logo{width:140px;height:auto;filter:drop-shadow(0 0 0 transparent)}
 .open-logo.flash{animation:openFlash .45s ease-out}
-@keyframes openFlash{0%{filter:brightness(1)}35%{filter:brightness(2.4) drop-shadow(0 0 24px var(--accent))}100%{filter:brightness(1)}}
+@keyframes openFlash{0%{filter:drop-shadow(0 0 0 transparent)}35%{filter:drop-shadow(0 0 22px var(--accent))}100%{filter:drop-shadow(0 0 0 transparent)}}
 .reduced .open-logo{mask-image:none;-webkit-mask-image:none}
 
 /* ---- home ---- */
@@ -225,7 +225,7 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 /* ================= Ikoner ================= */
 const ICON = {
   bolt:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M13 7l-4 6h3l-1 4 4-6h-3z" fill="currentColor" stroke="none"/></svg>',
-  sync:'<span class="dot" style="background:#3dbe6b;display:inline-block"></span>',
+  sync:'<span class="dot" style="background:#2FA88A;display:inline-block"></span>',
   clock:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
   pin:'<svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-7.2 7-12a7 7 0 1 0-14 0c0 4.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>',
   wrench:'<svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2-2z"/></svg>',
@@ -600,7 +600,7 @@ function vOpening(){
   return `
   <div class="opening ${reduced?'reduced':''}" id="opening">
     <div class="mark">
-      <img src="logo-mark.png" id="openLogo" class="open-logo" alt="LIRO">
+      <img src="logo-mark-dark.png" id="openLogo" class="open-logo" alt="LIRO">
     </div>
     <div class="footer">LiRo Elteknik AB</div>
   </div>`;
@@ -673,7 +673,7 @@ function vHome(){
 
   return `
   <div class="home-header row between">
-    <img src="logo-mark.png" class="brand-mini" alt="LIRO">
+    <img src="logo-mark-dark.png" class="brand-mini" alt="LIRO">
     <div class="row gap-xs">${ICON.sync}<span class="muted" style="font-size:13px">Sparat lokalt</span></div>
   </div>
   <div class="greeting row between">
