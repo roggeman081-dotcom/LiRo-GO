@@ -270,6 +270,7 @@ const ICON = {
   chevronRight:'<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px;flex:0 0 auto;color:var(--muted)"><path d="M9 5l7 7-7 7"/></svg>',
   x:'<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   mic:'<svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  mail:'<svg class="i" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
   menu:'<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
   plus:'<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   search:'<svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
@@ -654,6 +655,8 @@ async function syncIcalCalendar(){
   setIcalMeta({ lastSynced: new Date().toISOString(), count: events.length });
 }
 
+function getReportEmail(){ return localStorage.getItem('lirogo_report_email') || ''; }
+function setReportEmail(e){ if(e) localStorage.setItem('lirogo_report_email', e); else localStorage.removeItem('lirogo_report_email'); }
 function getAiKey(){ return localStorage.getItem('lirogo_ai_key') || ''; }
 function setAiKey(k){ if(k) localStorage.setItem('lirogo_ai_key', k); else localStorage.removeItem('lirogo_ai_key'); }
 function getAiModel(){ return localStorage.getItem('lirogo_ai_model') || AI_MODEL_DEFAULT; }
@@ -2047,6 +2050,50 @@ function vJobAvsluta(job){
   </div>`;
 }
 
+/* ---- Rapport via e-post (mailto med jobbets timmar, dagbok, material och nyckelinfo) ---- */
+function fmtDateSv(iso){
+  if(!iso) return '';
+  return new Date(iso).toLocaleDateString('sv-SE', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+function buildJobReport(job){
+  const c = customerOf(job);
+  const eco = jobEconomySummary(job);
+  const insp = inspectionProgress(job.id);
+  const usedRows = jobMaterials.filter(m=>m.kind!=='planned');
+  const lines = [];
+  lines.push(`Rapport – ${job.title}`);
+  if(c) lines.push(`Kund: ${c.name}`);
+  const addr = jobSiteAddressText(job);
+  if(addr) lines.push(`Adress: ${addr}`);
+  lines.push(`Avslutat: ${fmtDateSv(job.finishedAt) || fmtDateSv(new Date().toISOString())}`);
+  lines.push('');
+  lines.push('ARBETSTID');
+  lines.push(fmtHours(job.loggedHours));
+  lines.push('');
+  lines.push('DAGBOK');
+  lines.push(job.notes && job.notes.trim() ? job.notes.trim() : 'Inga anteckningar registrerade.');
+  lines.push('');
+  lines.push('MATERIAL');
+  if(usedRows.length){
+    usedRows.forEach(m=>lines.push(`- ${m.name}${m.qty?` (${m.qty} st)`:''}`));
+  } else {
+    lines.push('Inget material registrerat.');
+  }
+  lines.push('');
+  lines.push('VÄSENTLIG INFORMATION');
+  if(job.description) lines.push(`Arbetsbeskrivning: ${job.description}`);
+  if(job.changes) lines.push(`Ändringar/tillägg: ${job.changes}`);
+  if(insp.total) lines.push(`Egenkontroll: ${insp.done} av ${insp.total} punkter genomförda.`);
+  if(job.summary) lines.push(`Sammanfattning: ${job.summary}`);
+  lines.push('');
+  lines.push('EKONOMI (exkl. moms)');
+  lines.push(`Arbetskostnad: ${fmtKr(eco.labor)}`);
+  lines.push(`Material: ${fmtKr(eco.material.cost)}`);
+  lines.push(`Körkostnad: ${fmtKr(eco.travel)}`);
+  lines.push(`Totalt: ${fmtKr(eco.subtotal)}`);
+  return { subject: `Rapport – ${job.title}`, body: lines.join('\n') };
+}
+
 /* ---- Uppdrag: Fakturaunderlag ---- */
 function vJobFaktura(job){
   const eco = jobEconomySummary(job);
@@ -2062,6 +2109,10 @@ function vJobFaktura(job){
       <div class="row between" style="margin-top:8px"><span class="muted">Körkostnad (${job.travelMode==='km'?'km-ersättning':'framkörning'})</span><span class="bold">${fmtKr(eco.travel)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Övriga kostnader</span><span class="muted">Kommer snart</span></div>
       <div class="summary-total"><span>Totalt (exkl. moms)</span><span>${fmtKr(eco.subtotal)}</span></div>
+    </div>
+
+    <div class="section">
+      <button class="tile row-tile" data-act="send-report" data-id="${job.id}">${ICON.mail}<span class="t-text">Skicka rapport<span class="t-sub" style="display:block">${getReportEmail()?'Timmar, dagbok, material och nyckelinfo':'Lägg till en e-postadress i Inställningar'}</span></span></button>
     </div>
 
     <div class="section">
@@ -2085,7 +2136,7 @@ function vJobFaktura(job){
   </div>`;
 }
 
-/* ---- Arbetsläge (timer) ---- */
+/* ---- Arbetsläge ---- */
 function vArbetslage(job){
   return `
   <div class="work-screen">
@@ -2422,6 +2473,7 @@ function vSettingsPanel(){
   if(tab==='material') return vSettingsMaterial();
   if(tab==='calendar') return vSettingsCalendar();
   if(tab==='prices') return vSettingsPrices();
+  if(tab==='report') return vSettingsReport();
   return vSettingsHub();
 }
 function vSettingsHub(){
@@ -2443,6 +2495,29 @@ function vSettingsHub(){
       </div>
       <div style="margin-top:12px">
         <button class="tile row-tile" data-act="open-settings-tab" data-tab="prices">${ICON.calc}<span class="t-text">Priser<span class="t-sub" style="display:block">Standardpriser för nya projekt</span></span>${ICON.chevronRight}</button>
+      </div>
+      <div style="margin-top:12px">
+        <button class="tile row-tile" data-act="open-settings-tab" data-tab="report">${ICON.mail}<span class="t-text">Rapport<span class="t-sub" style="display:block">E-post för jobbrapporter</span></span>${ICON.chevronRight}</button>
+      </div>
+    </div>
+  </div>`;
+}
+function vSettingsReport(){
+  const email = getReportEmail();
+  return `
+  <div class="mat-panel">
+    <div class="mat-panel-head">
+      <div class="mat-panel-title">
+        <button class="iconbtn" data-act="settings-tab-back" aria-label="Tillbaka">${ICON.chevronLeft}</button>
+        <h1>Rapport</h1>
+        <div style="width:44px"></div>
+      </div>
+    </div>
+    <div class="settings-body">
+      <p class="settings-note">Adressen "Skicka rapport" på ett avslutat jobb öppnar din mailapp med ett förifyllt utkast till.</p>
+      <div class="field" style="margin-top:16px">
+        <span class="label">E-post för rapporter</span>
+        <input type="email" placeholder="din@epost.se" value="${esc(email)}" data-field="report-email" autocomplete="off">
       </div>
     </div>
   </div>`;
@@ -2716,6 +2791,7 @@ $app.addEventListener('input', e=>{
     return;
   }
   if(f==='ai-key'){ setAiKey(t.value.trim()); return; }
+  if(f==='report-email'){ setReportEmail(t.value.trim()); return; }
   if(f==='ical-url'){ setIcalUrl(t.value.trim()); return; }
   if(f==='price-search'){
     st.priceSearch = t.value;
@@ -2922,6 +2998,14 @@ $app.addEventListener('click', async e=>{
     job.status='invoiced'; await dbPut('jobs', job);
     flash('Markerat som fakturerat');
     return render();
+  }
+  if(a==='send-report'){
+    const job=jobById(b.dataset.id); if(!job) return;
+    const email = getReportEmail();
+    if(!email){ settingsOpen=true; st.settingsTab='report'; pushNav(); flash('Lägg till en e-postadress för rapporter'); return render(); }
+    const { subject, body } = buildJobReport(job);
+    window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    return;
   }
   if(a==='ai-job-summary'){
     const job=jobById(b.dataset.id); if(!job) return;
