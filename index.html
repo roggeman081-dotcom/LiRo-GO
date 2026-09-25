@@ -172,7 +172,8 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .material-cols .lbl{color:var(--muted);font-size:12px}
 .material-del{flex:0 0 32px;width:32px;height:32px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center}
 .summary-card{background:var(--surface);border-radius:20px;padding:16px;margin-top:12px}
-.summary-total{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.summary-total{display:flex;justify-content:space-between;gap:12px;font-size:18px;font-weight:700;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.summary-total span:last-child{white-space:nowrap}
 .add-form{background:var(--surface);border-radius:20px;padding:16px;margin-top:12px;display:flex;flex-direction:column;gap:12px}
 .add-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
@@ -367,7 +368,8 @@ async function createJob(input){
     changes:'', notes:'',
     workStartedAt:null, workElapsedMs:0, workSegments:[], summary:'',
     hourlyRate: defaults.hourlyRate, multiRatesEnabled:false, rateChannels:[],
-    travelMode: defaults.travelMode, travelFixedFee: defaults.travelFixedFee, travelPerKm: defaults.travelPerKm, travelKm:0 };
+    travelMode: defaults.travelMode, travelFixedFee: defaults.travelFixedFee, travelPerKm: defaults.travelPerKm, travelKm:0,
+    estimatedHours:0, showRot:false };
   await dbPut('jobs',j); jobs.push(j); return j;
 }
 function jobById(id){ return jobs.find(j=>j.id===id); }
@@ -469,6 +471,25 @@ function jobEconomySummary(job){
   const labor = laborCost(job);
   const travel = travelCost(job);
   return { material: mat, labor, travel, subtotal: mat.total + labor + travel };
+}
+
+/* ---- offert-kalkyl med ROT (bara en preliminär kalkyl, inget personuppgifts-krav) ---- */
+const VAT_RATE = 0.25;
+const ROT_RATE = 0.5;
+function jobOfferSummary(job){
+  const materialCost = jobMaterials.reduce((sum,m)=> sum + (Number(m.qty)||0)*(Number(m.unitPrice)||0), 0);
+  const markup = job.markupPercent ?? 15;
+  const materialWithMarkup = materialCost * (1 + markup/100);
+  const labor = (Number(job.estimatedHours)||0) * (Number(job.hourlyRate)||DEFAULT_PRICE_DEFAULTS.hourlyRate);
+  const travel = travelCost(job);
+  const other = 0;
+  const subtotal = labor + materialWithMarkup + travel + other; // exkl. moms
+  const vat = subtotal * VAT_RATE;
+  const totalInclVat = subtotal + vat;
+  const laborInclVat = labor * (1 + VAT_RATE);
+  const rotDeduction = job.showRot ? laborInclVat * ROT_RATE : 0;
+  const customerPrice = totalInclVat - rotDeduction;
+  return { materialCost, materialWithMarkup, labor, travel, other, subtotal, vat, totalInclVat, rotDeduction, customerPrice };
 }
 
 /* ---- foton ---- */
@@ -1576,6 +1597,7 @@ function vJobDetail(id){
   if(tab==='kontroll') return vJobKontroll(job);
   if(tab==='ekonomi') return vJobEkonomi(job);
   if(tab==='priser') return vJobPriser(job);
+  if(tab==='offert') return vJobOffert(job);
   if(tab==='avsluta') return vJobAvsluta(job);
   if(tab==='faktura') return vJobFaktura(job);
   return vJobOversikt(job);
@@ -1631,6 +1653,7 @@ function vJobOversikt(job){
       ${sectionCard('dokumentation', ICON.camera, 'Dokumentation', jobPhotos.length ? `${jobPhotos.length} bilder` : 'Bilder, ritningar, dokument')}
       ${sectionCard('kontroll', ICON.gauge, 'Kontroll', insp.total ? `${insp.done} av ${insp.total} klara` : 'Egenkontroll ej påbörjad')}
       ${sectionCard('ekonomi', ICON.calc, 'Ekonomi', `Totalt ${fmtKr(t.total)}`)}
+      ${job.isQuote ? sectionCard('offert', ICON.sparkle, 'Offert', job.showRot?'Preliminär kalkyl med ROT':'Preliminär kalkyl') : ''}
     </div>
   </div>`;
 }
@@ -1910,6 +1933,51 @@ function vJobPriser(job){
         <span class="label">Framkörningsavgift (exkl. moms)</span>
         <div class="row gap-xs"><input type="number" inputmode="decimal" value="${job.travelFixedFee||395}" data-field="job-travel-fixed" style="flex:1"><span class="muted">kr</span></div>
       </div>`}
+    </div>
+  </div>`;
+}
+
+/* ---- Uppdrag: Offert (preliminär kalkyl, ev. med ROT) ---- */
+function vJobOffert(job){
+  const o = jobOfferSummary(job);
+  const row = (label, val, opts) => `<div class="row between" style="margin-top:6px"><span class="muted">${label}</span><span${opts&&opts.bold?' class="bold"':''}>${val}</span></div>`;
+
+  return `
+  ${vWizHeader('Offert', false, undefined, undefined, 'job-tab-back')}
+  <div class="job-body">
+    <p class="settings-note">Preliminär kalkyl för offerten. Ingen personinformation behövs. Priserna hämtas från projektets Priser-inställningar.</p>
+
+    <div class="section">
+      <div class="field">
+        <span class="label">Uppskattad arbetstid</span>
+        <div class="row gap-xs"><input type="number" inputmode="decimal" value="${job.estimatedHours||0}" data-field="job-estimated-hours" style="flex:1"><span class="muted">h</span></div>
+      </div>
+      <div class="card switch-row" style="margin-top:16px">
+        <div>
+          <div>Visa med ROT</div>
+          <div class="muted" style="font-size:12px;margin-top:2px">Bara en kalkyl — minskar inte antalet timmar</div>
+        </div>
+        <button class="switch ${job.showRot?'on':''}" data-act="toggle-offer-rot"><div class="knob"></div></button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="summary-card" style="margin-top:0">
+        ${row('Arbete exkl. moms', fmtKr(o.labor))}
+        ${row('Material exkl. moms', fmtKr(o.materialWithMarkup))}
+        ${row('Körkostnad exkl. moms', fmtKr(o.travel))}
+        ${row('Övrigt exkl. moms', fmtKr(o.other))}
+        <div class="summary-total"><span>Summa exkl. moms</span><span>${fmtKr(o.subtotal)}</span></div>
+        ${row('Moms (25%)', fmtKr(o.vat))}
+        <div class="summary-total"><span>Summa inkl. moms</span><span>${fmtKr(o.totalInclVat)}</span></div>
+        ${job.showRot ? `
+        <div class="row between" style="margin-top:10px">
+          <span class="accent bold">Preliminärt ROT-avdrag</span>
+          <span class="accent bold">−${fmtKr(o.rotDeduction)}</span>
+        </div>
+        <div class="summary-total"><span>Kundens preliminära pris efter ROT</span><span>${fmtKr(o.customerPrice)}</span></div>
+        ` : ''}
+      </div>
     </div>
   </div>`;
 }
@@ -2590,6 +2658,11 @@ $app.addEventListener('input', e=>{
     job.travelKm=Number(t.value)||0; dbPut('jobs', job);
     return;
   }
+  if(f==='job-estimated-hours'){
+    const job=jobById(st.id); if(!job) return;
+    job.estimatedHours=Number(t.value)||0; dbPut('jobs', job);
+    return;
+  }
   if(f==='rate-channel'){
     updateRateChannel(st.id, t.dataset.id, t.dataset.fieldname, t.value);
     return;
@@ -2893,6 +2966,11 @@ $app.addEventListener('click', async e=>{
     return render();
   }
   if(a==='delete-rate-channel'){ await deleteRateChannel(st.id, b.dataset.id); return render(); }
+  if(a==='toggle-offer-rot'){
+    const job=jobById(st.id); if(!job) return;
+    job.showRot=!job.showRot; await dbPut('jobs', job);
+    return render();
+  }
   if(a==='sync-ical'){
     st.icalSyncing=true; st.icalError=null; render();
     try{
