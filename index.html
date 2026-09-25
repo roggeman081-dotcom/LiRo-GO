@@ -612,6 +612,81 @@ async function fetchAiJobSummary(job){
   return textBlock ? textBlock.text.trim() : '';
 }
 
+/* ---- AI-förslag i "På radarn" — läser avslutade projekt och föreslår mjuka uppföljningar ---- */
+function getRadarAiSuggestion(){ try{ return JSON.parse(localStorage.getItem('lirogo_ai_radar_suggestion')||'null'); }catch{ return null; } }
+function setRadarAiSuggestion(s){ if(s) localStorage.setItem('lirogo_ai_radar_suggestion', JSON.stringify(s)); else localStorage.removeItem('lirogo_ai_radar_suggestion'); }
+function getRadarAiFeedback(){ try{ return JSON.parse(localStorage.getItem('lirogo_ai_radar_feedback')||'[]'); }catch{ return []; } }
+function pushRadarAiFeedback(entry){
+  const list = getRadarAiFeedback(); list.push(entry);
+  localStorage.setItem('lirogo_ai_radar_feedback', JSON.stringify(list.slice(-200)));
+}
+function getRadarAiLastTry(){ return localStorage.getItem('lirogo_ai_radar_last_try')||''; }
+function setRadarAiLastTry(d){ localStorage.setItem('lirogo_ai_radar_last_try', d); }
+
+function pickRadarAiCandidate(){
+  const feedback = getRadarAiFeedback();
+  const handledJobIds = new Set(feedback.map(f=>f.jobId));
+  const candidates = jobs.filter(j=>(j.status==='done'||j.status==='invoiced') && !handledJobIds.has(j.id))
+    .sort((a,b)=>(b.finishedAt||b.updatedAt||'').localeCompare(a.finishedAt||a.updatedAt||''));
+  return candidates[0] || null;
+}
+
+async function fetchAiRadarSuggestion(job){
+  const key = getAiKey();
+  if(!key) throw new Error('no-key');
+  const system = 'Du är en mjuk, hjälpsam assistent för en svensk elektriker (LiRo Elteknik). Utifrån information om ett avslutat projekt ska du föreslå EN kort, mjuk uppföljningstanke eller idé till hans personliga "På radarn"-lista — t.ex. en kundkontakt, en möjlig komplettering eller något som nämndes men inte är löst. Använd en mjuk, icke-stressande ton med formuleringar som "Har vi…", "Ska vi kanske…", "Kan det vara läge att…", "Värt att kolla…", "Vill du följa upp…". Undvik varningar, krav och stressande ord. Svara med ENDAST en kort mening på svenska — ingen förklaring, inga citattecken, inget annat.';
+  const c = customerOf(job);
+  const cl = checklistProgress(job.id);
+  const insp = inspectionProgress(job.id);
+  const materials = await dbByJob('materials', job.id);
+  const usedMaterials = materials.filter(m=>m.kind!=='planned');
+  const parts = [
+    `Projekttyp: ${job.workType ? WORK_TYPE_LABEL[job.workType] : 'okänd'}`,
+    `Kund: ${c ? c.name : 'okänd'}`,
+    `Status: ${job.status==='invoiced'?'Fakturerat':'Avslutat'}`
+  ];
+  if(job.finishedAt) parts.push(`Avslutat: ${fmtDateTime(job.finishedAt)}`);
+  if(job.description) parts.push(`Arbetsbeskrivning: ${job.description}`);
+  if(usedMaterials.length) parts.push(`Installerat material: ${usedMaterials.map(m=>m.name).join(', ')}`);
+  if(job.notes) parts.push(`Projektanteckningar: ${job.notes}`);
+  if(job.changes) parts.push(`Framtida arbete/ändringar som nämnts: ${job.changes}`);
+  if(cl) parts.push(`Att göra: ${cl.done}/${cl.target} moment klara`);
+  if(insp.total) parts.push(`Egenkontroll: ${insp.done}/${insp.total} punkter genomförda${insp.done<insp.total?' (ofullständig — saknad dokumentation)':''}`);
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: getAiModel(), max_tokens: 150, system, messages: [{ role:'user', content: parts.join('\n') }] })
+  });
+  if(!res.ok){
+    let msg = 'API-fel ('+res.status+')';
+    if(res.status===401) msg = 'Ogiltig API-nyckel';
+    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const textBlock = (data.content||[]).find(b=>b.type==='text');
+  return textBlock ? textBlock.text.trim().replace(/^"|"$/g,'') : '';
+}
+
+async function maybeGenerateRadarSuggestion(){
+  if(st.view!=='home') return;
+  if(!getAiKey()) return;
+  if(getRadarAiSuggestion()) return;
+  if(st.aiRadarLoading) return;
+  const today = new Date().toDateString();
+  if(getRadarAiLastTry()===today) return;
+  const job = pickRadarAiCandidate();
+  setRadarAiLastTry(today);
+  if(!job) return;
+  st.aiRadarLoading = true;
+  try{
+    const text = await fetchAiRadarSuggestion(job);
+    if(text) setRadarAiSuggestion({ id: uid(), jobId: job.id, text, createdAt: new Date().toISOString() });
+  }catch(err){ /* tyst fel — försöker igen nästa dag */ }
+  st.aiRadarLoading = false;
+  if(st.view==='home') render();
+}
+
 /* Matchar AI:ns fria textförslag ("Automatsäkring 10A 1-pol") mot riktiga
    rader i Ahlsell-katalogen. Katalognamnen är korta/förkortade, så vi söker
    på det mest utmärkande ordet i förslaget (oftast produkttypen, först i
@@ -976,6 +1051,21 @@ function vRadarSection(){
       <button class="primary-btn" data-act="add-radar">${ICON.plusSmall}<span>Ny punkt</span></button>
     </div>
     ${shown.length ? `<div class="card" style="margin-top:14px;padding:4px 16px">${rows}</div>` : `<p class="empty" style="margin-top:14px;padding-left:0">Inget på radarn just nu.</p>`}
+    ${vRadarAiCard()}
+  </div>`;
+}
+function vRadarAiCard(){
+  const s = getRadarAiSuggestion();
+  if(!s) return '';
+  return `
+  <div class="card ai-suggest-box" style="margin-top:14px">
+    <span class="muted" style="font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase">AI-förslag</span>
+    <p style="margin-top:8px;font-size:15px">${esc(s.text)}</p>
+    <div class="row gap-sm" style="margin-top:14px">
+      <button class="primary-btn" style="flex:1" data-act="keep-ai-radar">${ICON.check}<span>Behåll</span></button>
+      <button style="flex:1;background:var(--pri-urgent);color:#fff;border-radius:20px;min-height:44px;font-weight:600" data-act="reject-ai-radar">Inte relevant</button>
+    </div>
+    <button class="muted" style="width:100%;text-align:center;margin-top:10px;font-size:13px" data-act="snooze-ai-radar">Senare</button>
   </div>`;
 }
 function vRadarAll(){
@@ -1078,6 +1168,7 @@ function vProjectListInner(filtered, q){
   return filtered.length ? `<div class="card" style="padding:2px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">${q?'Inga projekt matchade sökningen.':'Inga projekt ännu.'}</p>`;
 }
 function afterHome(){
+  maybeGenerateRadarSuggestion();
   const scroller = document.getElementById('cardscroll');
   if(!scroller) return;
   const dashes = document.querySelectorAll('.steps .dash');
@@ -2336,6 +2427,21 @@ $app.addEventListener('click', async e=>{
     rec.start();
     return;
   }
+  if(a==='keep-ai-radar'){
+    const s = getRadarAiSuggestion(); if(!s) return;
+    await addRadarItem(s.text, 'ai');
+    pushRadarAiFeedback({ jobId:s.jobId, text:s.text, decision:'kept', at:new Date().toISOString() });
+    setRadarAiSuggestion(null);
+    flash('Tillagd på radarn');
+    return render();
+  }
+  if(a==='reject-ai-radar'){
+    const s = getRadarAiSuggestion(); if(!s) return;
+    pushRadarAiFeedback({ jobId:s.jobId, text:s.text, decision:'rejected', at:new Date().toISOString() });
+    setRadarAiSuggestion(null);
+    return render();
+  }
+  if(a==='snooze-ai-radar'){ setRadarAiSuggestion(null); return render(); }
   if(a==='open-job'){
     const id=b.dataset.id; await loadJobDetail(id);
     calendarOpen=false;
@@ -2380,7 +2486,7 @@ $app.addEventListener('click', async e=>{
   if(a==='finish-job'){
     const job=jobById(b.dataset.id); if(!job) return;
     if(job.workStartedAt) await pauseWork(job.id);
-    job.status='done'; await dbPut('jobs', job);
+    job.status='done'; job.finishedAt=new Date().toISOString(); await dbPut('jobs', job);
     st.jobTab='faktura'; pushNav();
     flash('Uppdrag avslutat');
     return render();
