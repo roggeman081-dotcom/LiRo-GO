@@ -138,11 +138,9 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 /* ---- job detail ---- */
 .job-body{padding:16px 16px 100px}
 
-/* ---- arbetsläge (timer) ---- */
+/* ---- arbetsläge ---- */
 .work-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;max-width:520px;margin:0 auto;padding:24px}
-.work-label{font-size:14px;color:var(--muted)}
-.work-timer{font-size:56px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;margin-top:6px}
-.work-project{margin-top:8px;color:var(--muted);font-size:15px;text-align:center}
+.work-project{color:var(--text);text-align:center}
 .work-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:48px;width:100%;max-width:360px}
 .work-btn{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 4px;border-radius:20px;background:var(--surface);font-size:12px;font-weight:600;text-align:center;position:relative;overflow:hidden}
 .work-btn svg{width:24px;height:24px;color:var(--accent)}
@@ -401,8 +399,7 @@ async function createJob(input){
     isQuote:!!input.isQuote, status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now,
     siteUsesCustomerAddress: input.siteUsesCustomerAddress!==false,
     siteAddress: input.siteAddress||null, sitePostalCode: input.sitePostalCode||null, siteCity: input.siteCity||null,
-    changes:'', notes:'',
-    workStartedAt:null, workElapsedMs:0, workSegments:[], summary:'',
+    changes:'', notes:'', summary:'', loggedHours:0,
     hourlyRate: defaults.hourlyRate, multiRatesEnabled:false, rateChannels:[],
     travelMode: defaults.travelMode, travelFixedFee: defaults.travelFixedFee, travelPerKm: defaults.travelPerKm, travelKm:0,
     estimatedHours:0, showRot:false };
@@ -416,30 +413,8 @@ function jobSiteAddressText(job){
   const c = customerOf(job);
   return c ? (c.address||'') : '';
 }
-function jobElapsedMs(job){
-  return (job.workElapsedMs||0) + (job.workStartedAt ? (Date.now() - new Date(job.workStartedAt).getTime()) : 0);
-}
-function fmtDuration(ms){
-  const totalMin = Math.floor(ms/60000);
-  const h = Math.floor(totalMin/60), m = totalMin%60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}`;
-}
-function fmtHours(ms){
-  return (ms/3600000).toLocaleString('sv-SE', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' h';
-}
-async function startWork(jobId){
-  const job = jobById(jobId); if(!job || job.workStartedAt) return;
-  job.workStartedAt = new Date().toISOString();
-  await dbPut('jobs', job);
-}
-async function pauseWork(jobId){
-  const job = jobById(jobId); if(!job || !job.workStartedAt) return;
-  const start = job.workStartedAt, end = new Date().toISOString();
-  job.workElapsedMs = (job.workElapsedMs||0) + (new Date(end).getTime() - new Date(start).getTime());
-  job.workSegments = job.workSegments||[];
-  job.workSegments.push({ start, end });
-  job.workStartedAt = null;
-  await dbPut('jobs', job);
+function fmtHours(h){
+  return (Number(h)||0).toLocaleString('sv-SE', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' h';
 }
 
 /* ---- projektets prisinställningar (grundtimpris, tidskanaler, körkostnad) ---- */
@@ -479,10 +454,9 @@ function channelForMinute(job, minuteOfDay){
 }
 function laborCost(job){
   const rate = Number(job.hourlyRate)||DEFAULT_PRICE_DEFAULTS.hourlyRate;
-  const hours = jobElapsedMs(job)/3600000;
-  if(!job.multiRatesEnabled || !(job.rateChannels||[]).length) return hours * rate;
-  const segments = (job.workSegments||[]).slice();
-  if(job.workStartedAt) segments.push({ start: job.workStartedAt, end: new Date().toISOString() });
+  const hours = Number(job.loggedHours)||0;
+  const segments = job.workSegments||[]; // äldre jobb som loggades med den borttagna klockan
+  if(!job.multiRatesEnabled || !(job.rateChannels||[]).length || !segments.length) return hours * rate;
   let cost = 0;
   for(const seg of segments){
     let t = new Date(seg.start).getTime();
@@ -1023,7 +997,7 @@ async function closeTopLayer(){
     if(st.matPanelMode && st.matPanelMode!=='browse'){ st.matPanelMode='browse'; st.matDraft={}; return; }
     st.matPanel=false; return;
   }
-  if(st.view==='work'){ await pauseWork(st.id); st.view='job'; st.jobTab='oversikt'; return; }
+  if(st.view==='work'){ st.view='job'; st.jobTab='oversikt'; return; }
   if(st.view==='wizard'){
     if(st.step===0){ st={view:'home'}; return; }
     st.step -= 1; return;
@@ -1654,13 +1628,11 @@ function vJobOversikt(job){
       ${ICON.chevronRight}
     </button>`;
 
-  const hasWorkTime = !!job.workStartedAt || (job.workElapsedMs||0) > 0;
   const finished = job.status==='done' || job.status==='invoiced';
   let primaryLabel, primaryAct;
   if(job.status==='invoiced'){ primaryLabel='Visa fakturaunderlag'; primaryAct='open-faktura'; }
   else if(job.status==='done'){ primaryLabel='Skapa fakturaunderlag'; primaryAct='open-faktura'; }
-  else if(hasWorkTime){ primaryLabel='Fortsätt arbete'; primaryAct='enter-work'; }
-  else { primaryLabel='Starta arbete'; primaryAct='enter-work'; }
+  else { primaryLabel='Öppna arbetsläge'; primaryAct='enter-work'; }
 
   return `
   ${vWizHeader(job.title, false, undefined, undefined, 'job-back')}
@@ -1875,7 +1847,7 @@ function vJobEkonomi(job){
     </div>
     <div class="section">
       <div class="summary-card" style="margin-top:0">
-        <div class="row between"><span class="muted">Arbetstid</span><span>${jobElapsedMs(job)>0?fmtHours(jobElapsedMs(job)):'Ingen tid loggad än'}</span></div>
+        <div class="row between"><span class="muted">Arbetstid</span><span class="row gap-xs"><input type="number" inputmode="decimal" value="${job.loggedHours||0}" data-field="job-logged-hours" style="width:64px;padding:4px 8px;min-height:0;text-align:right"> h</span></div>
         <div class="row between" style="margin-top:6px"><span class="muted">Arbetskostnad</span><span>${fmtKr(eco.labor)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="muted">Materialkostnad</span><span>${fmtKr(eco.material.cost)}</span></div>
         <div class="row between" style="margin-top:6px">
@@ -2023,7 +1995,7 @@ function vJobAvsluta(job){
   const insp = inspectionProgress(job.id);
   const usedCount = jobMaterials.filter(m=>m.kind!=='planned').length;
   const items = [
-    { label:'Tid', ok: jobElapsedMs(job)>0, okText: fmtHours(jobElapsedMs(job)), badText:'Ingen tid loggad' },
+    { label:'Tid', ok: (job.loggedHours||0)>0, okText: fmtHours(job.loggedHours), badText:'Ingen tid registrerad' },
     { label:'Material', ok: usedCount>0, okText:`${usedCount} artiklar`, badText:'Inga artiklar registrerade' },
     { label:'Bilder', ok: jobPhotos.length>0, okText:`${jobPhotos.length} bilder`, badText:'Inga bilder' },
     { label:'Egenkontroll', ok: insp.total>0 && insp.done===insp.total, okText:'Klar', badText: insp.total ? `${insp.total-insp.done} punkter kvar` : 'Ingen kontroll påbörjad' },
@@ -2055,7 +2027,7 @@ function vJobFaktura(job){
   ${vWizHeader('Fakturaunderlag', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
     <div class="card">
-      <div class="row between"><span class="muted">Arbetstid</span><span class="bold">${fmtHours(jobElapsedMs(job))}</span></div>
+      <div class="row between"><span class="muted">Arbetstid</span><span class="bold">${fmtHours(job.loggedHours)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Arbetskostnad (${fmtKr(job.hourlyRate||625)}/h${job.multiRatesEnabled?' + tidskanaler':''})</span><span class="bold">${fmtKr(eco.labor)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Material (${usedRows.length} artiklar)</span><span class="bold">${fmtKr(eco.material.cost)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Påslag material (${job.markupPercent}%)</span><span class="bold">${fmtKr(eco.material.markupSum)}</span></div>
@@ -2086,14 +2058,11 @@ function vJobFaktura(job){
 }
 
 /* ---- Arbetsläge (timer) ---- */
-let workTimerInterval = null;
 function vArbetslage(job){
   return `
   <div class="work-screen">
-    <button class="iconbtn" style="position:absolute;top:calc(16px + env(safe-area-inset-top,0px));left:16px" data-act="work-pause" aria-label="Pausa">${ICON.x}</button>
-    <div class="work-label">Pågående arbete</div>
-    <div class="work-timer" id="workTimer">${fmtDuration(jobElapsedMs(job))}</div>
-    <div class="work-project">${esc(job.title)}</div>
+    <button class="iconbtn" style="position:absolute;top:calc(16px + env(safe-area-inset-top,0px));left:16px" data-act="work-pause" aria-label="Stäng">${ICON.x}</button>
+    <div class="work-project" style="font-size:20px;font-weight:700">${esc(job.title)}</div>
     <div class="work-actions">
       <button class="work-btn" data-act="open-mat-panel">${ICON.box}<span>Material</span></button>
       <label class="work-btn">
@@ -2121,14 +2090,6 @@ function vWorkNotePanel(){
     </div>
   </div>`;
 }
-function afterWork(){
-  const job = jobById(st.id); if(!job) return;
-  workTimerInterval = setInterval(()=>{
-    const el = document.getElementById('workTimer');
-    if(el) el.textContent = fmtDuration(jobElapsedMs(job));
-  }, 1000);
-}
-
 /* ================= Registrera material (panel) ================= */
 function vMatQtyRow(row, kind){
   kind = kind||'used';
@@ -2600,7 +2561,6 @@ function vAiResults(){
 let settingsOpen = false;
 let calendarOpen = false;
 function render(){
-  if(workTimerInterval){ clearInterval(workTimerInterval); workTimerInterval=null; }
   if(st.view==='opening'){ $app.innerHTML = vOpening(); afterOpening(); return; }
   if(st.view==='home'){ $app.innerHTML = vHome() + (calendarOpen?vCalendarPanel():'') + (settingsOpen?vSettingsPanel():''); afterHome(); return; }
   if(st.view==='projects'){ $app.innerHTML = vProjects() + (settingsOpen?vSettingsPanel():''); return; }
@@ -2615,7 +2575,6 @@ function render(){
     const job = jobById(st.id);
     if(!job){ st={view:'home'}; return render(); }
     $app.innerHTML = vArbetslage(job) + (settingsOpen?vSettingsPanel():'');
-    afterWork();
     return;
   }
 }
@@ -2735,6 +2694,11 @@ $app.addEventListener('input', e=>{
     job.estimatedHours=Number(t.value)||0; dbPut('jobs', job);
     return;
   }
+  if(f==='job-logged-hours'){
+    const job=jobById(st.id); if(!job) return;
+    job.loggedHours=Number(t.value)||0; dbPut('jobs', job);
+    return;
+  }
   if(f==='rate-channel'){
     updateRateChannel(st.id, t.dataset.id, t.dataset.fieldname, t.value);
     return;
@@ -2834,8 +2798,6 @@ $app.addEventListener('click', async e=>{
 
   /* ---- arbetsläge ---- */
   if(a==='enter-work'){
-    const job=jobById(st.id); if(!job) return;
-    if(!job.workStartedAt) await startWork(st.id);
     st.view='work'; pushNav(); return render();
   }
   if(a==='work-pause'){ history.back(); return; }
@@ -2862,7 +2824,6 @@ $app.addEventListener('click', async e=>{
   if(a==='open-faktura'){ st.jobTab='faktura'; pushNav(); return render(); }
   if(a==='finish-job'){
     const job=jobById(b.dataset.id); if(!job) return;
-    if(job.workStartedAt) await pauseWork(job.id);
     job.status='done'; job.finishedAt=new Date().toISOString(); await dbPut('jobs', job);
     st.jobTab='faktura'; pushNav();
     flash('Uppdrag avslutat');
