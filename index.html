@@ -719,6 +719,33 @@ async function fetchAiJobSummary(job){
   return textBlock ? textBlock.text.trim() : '';
 }
 
+/* ---- "Fråga LiRo AI" i arbetsläget — snabba praktiska svar med jobbet som kontext ---- */
+async function fetchAiJobAnswer(job, question){
+  const key = getAiKey();
+  if(!key) throw new Error('no-key');
+  const system = 'Du är en erfaren svensk elektriker som ger korta, praktiska svar till en kollega som står mitt i ett jobb. Svara kort och konkret på svenska (max 3-4 meningar). Gäller frågan dimensionering, regelverk eller säkerhet — var tydlig men kärnfull, och säg till om något bör dubbelkollas mot gällande föreskrifter istället för att gissa.';
+  const parts = [`Uppdrag: ${job.title}`];
+  if(job.description) parts.push(`Arbetsbeskrivning: ${job.description}`);
+  if(jobMaterials && jobMaterials.length) parts.push(`Material på jobbet: ${jobMaterials.slice(0,25).map(m=>m.name).join(', ')}`);
+  if(job.notes) parts.push(`Anteckningar: ${job.notes}`);
+  if(job.changes) parts.push(`Ändringar/tillägg: ${job.changes}`);
+  parts.push(`Fråga: ${question}`);
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: getAiModel(), max_tokens: 400, system, messages: [{ role:'user', content: parts.join('\n') }] })
+  });
+  if(!res.ok){
+    let msg = 'API-fel ('+res.status+')';
+    if(res.status===401) msg = 'Ogiltig API-nyckel';
+    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const textBlock = (data.content||[]).find(b=>b.type==='text');
+  return textBlock ? textBlock.text.trim() : '';
+}
+
 /* ---- AI-förslag i "På radarn" — läser avslutade projekt och föreslår mjuka uppföljningar ---- */
 function getRadarAiSuggestion(){ try{ return JSON.parse(localStorage.getItem('lirogo_ai_radar_suggestion')||'null'); }catch{ return null; } }
 function setRadarAiSuggestion(s){ if(s) localStorage.setItem('lirogo_ai_radar_suggestion', JSON.stringify(s)); else localStorage.removeItem('lirogo_ai_radar_suggestion'); }
@@ -986,6 +1013,7 @@ async function closeTopLayer(){
   if(settingsOpen){ settingsOpen=false; return; }
   if(calendarOpen){ calendarOpen=false; return; }
   if(st.workNoteOpen){ st.workNoteOpen=false; return; }
+  if(st.workAiOpen){ st.workAiOpen=false; return; }
   if(st.scannerOpen){
     st.scannerOpen=false;
     if(scannerFrame){ cancelAnimationFrame(scannerFrame); scannerFrame=null; }
@@ -2075,7 +2103,8 @@ function vArbetslage(job){
     </div>
   </div>
   ${st.matPanel ? vMaterialPanel(job) : ''}
-  ${st.workNoteOpen ? vWorkNotePanel() : ''}`;
+  ${st.workNoteOpen ? vWorkNotePanel() : ''}
+  ${st.workAiOpen ? vWorkAiPanel(job) : ''}`;
 }
 function vWorkNotePanel(){
   return `
@@ -2089,6 +2118,38 @@ function vWorkNotePanel(){
       </div>
     </div>
   </div>`;
+}
+function vWorkAiPanel(job){
+  return `
+  <div class="mat-panel">
+    <div class="mat-panel-head">
+      <div class="mat-panel-title">
+        <button class="iconbtn" data-act="work-ai-close" aria-label="Stäng">${ICON.x}</button>
+        <h1>Fråga LiRo AI</h1>
+        <div style="width:44px"></div>
+      </div>
+      <div class="mat-panel-sub">${esc(job.title)}</div>
+    </div>
+    <div class="mat-panel-list">
+      <div class="ai-suggest-box">
+        <span class="label">Din fråga</span>
+        <div class="field-mic">
+          <textarea placeholder="T.ex. Vilken area behöver matarkabeln till den här laddboxen?" data-field="work-ai-question" autocomplete="off">${esc(st.workAiQuestion||'')}</textarea>
+          ${DICTATION_SUPPORTED?`<button class="iconbtn mic-inline ${st.dictatingKey==='workai'?'mic-listening':''}" data-act="dictate-work-ai" aria-label="${st.dictatingKey==='workai'?'Lyssnar, tryck för att stoppa':'Diktera'}" style="top:24px;transform:none">${ICON.mic}</button>`:''}
+        </div>
+        <div style="margin-top:12px">
+          <button class="primary-btn" data-act="work-ai-ask">${ICON.sparkle}<span>${st.workAiLoading?'Tänker…':'Fråga'}</span></button>
+        </div>
+      </div>
+      <div id="workAiResult">${vWorkAiResult()}</div>
+    </div>
+  </div>`;
+}
+function vWorkAiResult(){
+  if(st.workAiLoading) return `<p class="muted" style="padding:8px 0">Tänker…</p>`;
+  if(st.workAiError) return `<p class="muted" style="padding:8px 0">${esc(st.workAiError)}</p>`;
+  if(st.workAiAnswer) return `<div class="card" style="margin-top:16px;white-space:pre-wrap">${esc(st.workAiAnswer)}</div>`;
+  return '';
 }
 /* ================= Registrera material (panel) ================= */
 function vMatQtyRow(row, kind){
@@ -2708,6 +2769,7 @@ $app.addEventListener('input', e=>{
   if(f==='new-channel-to'){ st.newChannelDraft=st.newChannelDraft||{}; st.newChannelDraft.to=t.value; return; }
   if(f==='new-channel-rate'){ st.newChannelDraft=st.newChannelDraft||{}; st.newChannelDraft.rate=t.value; return; }
   if(f==='ai-desc'){ st.aiDesc = t.value; return; }
+  if(f==='work-ai-question'){ st.workAiQuestion = t.value; return; }
   if(f==='radar-draft'){ st.radarDraft = t.value; return; }
   if(f==='cl-name'){ st.clDraft=st.clDraft||{}; st.clDraft.name=t.value; return; }
   if(f==='cl-qty'){ st.clDraft=st.clDraft||{}; st.clDraft.qty=t.value; return; }
@@ -2818,7 +2880,33 @@ $app.addEventListener('click', async e=>{
     st.workNoteOpen=false; flash('Anteckning sparad');
     return render();
   }
-  if(a==='work-ai'){ flash('Fråga LiRo AI kommer snart'); return; }
+  if(a==='work-ai'){
+    if(!getAiKey()){ settingsOpen=true; pushNav(); flash('Lägg till en API-nyckel för AI-förslag'); return render(); }
+    st.workAiOpen=true; st.workAiAnswer=null; st.workAiError=null; pushNav(); return render();
+  }
+  if(a==='work-ai-close'){ history.back(); return; }
+  if(a==='work-ai-ask'){
+    const question = (st.workAiQuestion||'').trim();
+    if(!question){ flash('Skriv en fråga först'); return; }
+    const job=jobById(st.id); if(!job) return;
+    st.workAiLoading=true; st.workAiError=null; st.workAiAnswer=null; render();
+    (async()=>{
+      try{
+        st.workAiAnswer = await fetchAiJobAnswer(job, question);
+      }catch(err){
+        st.workAiError = err.message==='no-key' ? 'Ingen API-nyckel inlagd'
+          : err.message==='Failed to fetch' ? 'Kunde inte nå Anthropics API — kontrollera nätet'
+          : (err.message||'Något gick fel');
+      }
+      st.workAiLoading=false;
+      render();
+    })();
+    return;
+  }
+  if(a==='dictate-work-ai'){
+    toggleDictate('workai', (text)=>{ st.workAiQuestion = text; render(); });
+    return;
+  }
 
   /* ---- avsluta / fakturaunderlag ---- */
   if(a==='open-faktura'){ st.jobTab='faktura'; pushNav(); return render(); }
