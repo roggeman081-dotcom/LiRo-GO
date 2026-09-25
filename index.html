@@ -83,7 +83,13 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .jobcard .addr{gap:8px;margin-bottom:16px;color:var(--muted)}
 .jobcard .foot{margin-top:4px}
 .empty{padding:0 16px;color:var(--muted)}
-.home-footer{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;padding:8px 16px calc(16px + env(safe-area-inset-bottom,0px));background:linear-gradient(180deg,rgba(0,0,0,0),var(--bg) 30%);display:flex;gap:12px;align-items:center}
+
+/* ---- global bottennavigering ---- */
+.bottomnav{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;display:flex;align-items:flex-end;justify-content:space-around;background:var(--surface);border-top:1px solid var(--line);padding:10px 8px calc(10px + env(safe-area-inset-bottom,0px));z-index:30}
+.bn-tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 10px;color:var(--muted);font-size:11px;font-weight:600;flex:1}
+.bn-tab.on{color:var(--accent)}
+.bn-plus{flex:0 0 56px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--ink);display:flex;align-items:center;justify-content:center;margin-top:-30px;box-shadow:0 6px 16px rgba(32,31,28,.18)}
+.bn-plus svg{width:26px;height:26px}
 
 /* ---- wizard ---- */
 .wiz-header{padding:16px 16px 0}
@@ -116,6 +122,7 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .search-wrap{position:relative}
 .search-wrap svg.i{position:absolute;left:14px;top:38px;color:var(--muted)}
 .search-wrap input{padding-left:40px}
+.search-wrap.flat svg.i{top:50%;transform:translateY(-50%)}
 .divider{text-align:center;color:var(--muted);font-size:13px;margin:16px 0}
 .result-row{padding:10px 0;width:100%;text-align:left;border-bottom:1px solid var(--line)}
 .result-row:last-child{border-bottom:0}
@@ -129,6 +136,7 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .job-body{padding:16px 16px 100px}
 .section{margin-top:28px}
 .section-title{font-size:18px;font-weight:600;margin-bottom:12px}
+.subsection-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px}
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .photo-thumb{position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;background:var(--surface)}
 .photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
@@ -256,7 +264,9 @@ const ICON = {
   minus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   plusSmall:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   sparkle:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4 10-10"/></svg>'
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4 10-10"/></svg>',
+  home:'<svg class="i" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-6h4v6"/></svg>',
+  folder:'<svg class="i" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6z"/></svg>'
 };
 
 /* ================= Data ================= */
@@ -568,6 +578,7 @@ function closeTopLayer(){
     st.step -= 1; return;
   }
   if(st.view==='job'){ st={view:'home'}; return; }
+  if(st.view==='projects'){ st={view:'home'}; return; }
 }
 window.addEventListener('popstate', ()=>{ closeTopLayer(); render(); });
 
@@ -690,11 +701,52 @@ function vHome(){
     </div>
     ${list.length===0?`<div class="empty">Inga uppdrag idag. Skapa ett nytt för att komma igång.</div>`:`<div class="cards" id="cardscroll">${cards}</div>`}
   </div>
-  <div class="home-footer">
-    <button class="primary-btn" style="flex:1" data-act="new-job">${ICON.plus}<span>Nytt uppdrag</span></button>
-    <button class="iconbtn" aria-label="Diktera">${ICON.mic}</button>
-    <button class="iconbtn" aria-label="Meny" data-act="open-settings">${ICON.menu}</button>
+  ${vBottomNav('hem')}`;
+}
+function vBottomNav(active){
+  return `
+  <div class="bottomnav">
+    <button class="bn-tab ${active==='hem'?'on':''}" data-act="nav-home">${ICON.home}<span>Hem</span></button>
+    <button class="bn-tab ${active==='projekt'?'on':''}" data-act="nav-projects">${ICON.folder}<span>Projekt</span></button>
+    <button class="bn-plus" data-act="new-job" aria-label="Nytt uppdrag">${ICON.plus}</button>
+    <button class="bn-tab ${active==='mer'?'on':''}" data-act="open-settings">${ICON.menu}<span>Mer</span></button>
   </div>`;
+}
+function vProjects(){
+  const q = (st.projectSearch||'').trim().toLowerCase();
+  const all = jobs.slice().sort((a,b)=>(b.plannedAt||'').localeCompare(a.plannedAt||''));
+  const filtered = q ? all.filter(j=>{
+    const c = customerOf(j);
+    return j.title.toLowerCase().includes(q) || (c && c.name.toLowerCase().includes(q));
+  }) : all;
+
+  return `
+  <div class="home-header px" style="padding-top:16px">
+    <div class="h1" style="font-size:22px">Projekt</div>
+  </div>
+  <div class="px" style="margin-top:14px">
+    <div class="field search-wrap flat">
+      ${ICON.search}
+      <input type="text" placeholder="Sök projekt eller kund…" value="${esc(st.projectSearch||'')}" data-field="project-search">
+    </div>
+  </div>
+  <div class="px" style="margin-top:10px" id="projectList">${vProjectListInner(filtered, q)}</div>
+  ${vBottomNav('projekt')}`;
+}
+function vProjectListInner(filtered, q){
+  const rows = filtered.map(j=>{
+    const c = customerOf(j); const s = statusLabel(j.status);
+    return `
+    <button class="row gap-sm" style="width:100%;text-align:left;padding:12px 0;border-bottom:1px solid var(--line)" data-act="open-job" data-id="${j.id}">
+      <div class="icon-circle" style="width:40px;height:40px;flex:0 0 40px">${ICON.wrench}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:15px">${esc(j.title)}</div>
+        <div class="muted" style="font-size:12px;margin-top:2px">${c?esc(c.name):''}</div>
+      </div>
+      <span class="pill ${s.on?'on':''}">${s.l}</span>
+    </button>`;
+  }).join('');
+  return filtered.length ? `<div class="card" style="padding:2px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">${q?'Inga projekt matchade sökningen.':'Inga projekt ännu.'}</p>`;
 }
 function afterHome(){
   const scroller = document.getElementById('cardscroll');
@@ -854,7 +906,7 @@ function vStepDetails(){
       <div class="pri-row">${pri}</div>
     </div>
     <div class="field">
-      <span class="label">Checklista / moment</span>
+      <span class="label">Att göra</span>
       <span class="muted" style="font-size:12px;display:block;margin-bottom:8px">T.ex. "Uttag" med antal 4 — då visas en förloppsstapel på uppdraget som fylls i takt med att du bockar av dem.</span>
       ${vChecklistDraftList()}
       <div class="add-form" style="margin-top:12px">
@@ -965,13 +1017,14 @@ function vChecklistSection(job){
 
   return `
   <div class="section">
-    <div class="section-title">Checklista</div>
+    <div class="section-title">Arbete</div>
+    <div class="subsection-title">Att göra</div>
     ${prog ? `
     <div class="job-progress">
       <div class="row between" style="font-size:13px"><span class="muted">${prog.done} av ${prog.target} klara</span><span class="bold">${prog.percent}%</span></div>
       <div class="progress-track"><div class="progress-fill" style="width:${prog.percent}%"></div></div>
     </div>
-    <div class="card" style="margin-top:12px;padding:4px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">Ingen checklista ännu.</p>`}
+    <div class="card" style="margin-top:12px;padding:4px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">Inga moment ännu.</p>`}
     <div class="add-form" style="margin-top:12px">
       <input type="text" placeholder="Namn på moment, t.ex. Uttag" value="${esc(st.clDraft?.name||'')}" data-field="cl-name" autocomplete="off">
       <div class="row2" style="grid-template-columns:1fr auto">
@@ -1309,6 +1362,7 @@ let calendarOpen = false;
 function render(){
   if(st.view==='opening'){ $app.innerHTML = vOpening(); afterOpening(); return; }
   if(st.view==='home'){ $app.innerHTML = vHome() + (calendarOpen?vCalendarPanel():'') + (settingsOpen?vSettingsPanel():''); afterHome(); return; }
+  if(st.view==='projects'){ $app.innerHTML = vProjects() + (settingsOpen?vSettingsPanel():''); return; }
   if(st.view==='wizard'){
     const stepView = [vStepKind, vStepCustomer, vStepDetails, vStepSummary][st.step]();
     $app.innerHTML = stepView + vWizFooter() + (settingsOpen?vSettingsPanel():'');
@@ -1339,6 +1393,17 @@ $app.addEventListener('input', e=>{
   if(f==='mat-enr'){ st.matDraft=st.matDraft||{}; st.matDraft.eNr=t.value; return; }
   if(f==='mat-qty'){ st.matDraft=st.matDraft||{}; st.matDraft.qty=t.value; return; }
   if(f==='mat-price'){ st.matDraft=st.matDraft||{}; st.matDraft.unitPrice=t.value; return; }
+  if(f==='project-search'){
+    st.projectSearch = t.value;
+    const q = t.value.trim().toLowerCase();
+    const all = jobs.slice().sort((a,b)=>(b.plannedAt||'').localeCompare(a.plannedAt||''));
+    const filtered = q ? all.filter(j=>{
+      const c = customerOf(j);
+      return j.title.toLowerCase().includes(q) || (c && c.name.toLowerCase().includes(q));
+    }) : all;
+    const box=document.getElementById('projectList'); if(box) box.innerHTML=vProjectListInner(filtered, q);
+    return;
+  }
   if(f==='mat-search'){
     st.matSearch = t.value;
     const box=document.getElementById('matPanelList'); if(box) box.innerHTML=vMatPanelList();
@@ -1407,6 +1472,8 @@ $app.addEventListener('click', async e=>{
   const a=b.dataset.act;
 
   if(a==='new-job'){ draft=emptyDraft(); searchQuery=''; st={view:'wizard', step:0}; pushNav(); return render(); }
+  if(a==='nav-home'){ if(st.view==='home') return; st={view:'home'}; pushNav(); return render(); }
+  if(a==='nav-projects'){ if(st.view==='projects') return; st={view:'projects'}; pushNav(); return render(); }
   if(a==='open-job'){
     const id=b.dataset.id; await loadJobDetail(id);
     calendarOpen=false;
