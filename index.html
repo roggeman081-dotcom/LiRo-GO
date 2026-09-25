@@ -338,21 +338,28 @@ const dbByJob=(s,jobId)=>tx(s,'readonly',o=>o.index('job').getAll(jobId));
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function flash(t){ const s=document.getElementById('status'); s.textContent=t; s.style.opacity=1; clearTimeout(flash.t); flash.t=setTimeout(()=>s.style.opacity=0,1200); }
+function flash(t, ms){ const s=document.getElementById('status'); s.textContent=t; s.style.opacity=1; clearTimeout(flash.t); flash.t=setTimeout(()=>s.style.opacity=0, ms||1200); }
 
-/* ---- diktering (delad hjälpfunktion för alla mikrofonknappar) ---- */
+/* ---- diktering (delad hjälpfunktion för alla mikrofonknappar) ----
+   Safari (iOS och macOS) har aldrig implementerat SpeechRecognition —
+   bara Chrome/Edge/Android WebView gör det. Det går inte att polyfilla
+   (det finns ingen motsvarande inbyggd taligenkänning att haka i), så
+   i Safari döljs våra egna mikrofonknappar helt och vi litar på att
+   tangentbordets egen dikteringsknapp (mikrofon-ikonen på själva
+   tangentbordet) redan fungerar utmärkt i alla textfält utan vår kod. */
+const DICTATION_SUPPORTED = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 let activeRecognition = null;
 function dictateErrorText(err){
-  if(err==='not-allowed' || err==='service-not-allowed') return 'Mikrofonen nekades. Kolla appens mikrofonbehörighet i telefonens inställningar (och prova Safari istället för hemskärmsappen om det inte funkar där).';
+  if(err==='not-allowed' || err==='service-not-allowed') return 'Mikrofonen nekades. Kolla appens mikrofonbehörighet i telefonens inställningar.';
   if(err==='no-speech') return 'Hördes inget. Försök igen.';
   if(err==='audio-capture') return 'Hittar ingen mikrofon.';
   return 'Kunde inte tolka talet, försök igen.';
 }
 function toggleDictate(key, onResult){
+  if(!DICTATION_SUPPORTED) return;
   if(st.dictatingKey===key){ if(activeRecognition) activeRecognition.stop(); return; }
   if(activeRecognition) activeRecognition.stop();
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SR){ flash('Diktering stöds inte i den här webbläsaren'); return; }
   const rec = new SR(); rec.lang='sv-SE'; rec.interimResults=false;
   let started=false;
   const startTimeout = setTimeout(()=>{
@@ -1172,7 +1179,7 @@ function vRadarSection(){
     <div class="add-form" style="margin-top:14px">
       <div class="field-mic">
         <input type="text" placeholder="Ny punkt… t.ex. Följ upp Andersson" value="${esc(st.radarDraft||'')}" data-field="radar-draft" autocomplete="off">
-        <button class="iconbtn mic-inline ${st.dictatingKey==='radar'?'mic-listening':''}" data-act="dictate-radar" aria-label="${st.dictatingKey==='radar'?'Lyssnar, tryck för att stoppa':'Diktera'}">${ICON.mic}</button>
+        ${DICTATION_SUPPORTED?`<button class="iconbtn mic-inline ${st.dictatingKey==='radar'?'mic-listening':''}" data-act="dictate-radar" aria-label="${st.dictatingKey==='radar'?'Lyssnar, tryck för att stoppa':'Diktera'}">${ICON.mic}</button>`:''}
       </div>
       <button class="primary-btn" data-act="add-radar">${ICON.plusSmall}<span>Ny punkt</span></button>
     </div>
@@ -1223,7 +1230,7 @@ function vRadarAll(){
     <div class="add-form" style="margin-top:0">
       <div class="field-mic">
         <input type="text" placeholder="Ny punkt…" value="${esc(st.radarDraft||'')}" data-field="radar-draft" autocomplete="off">
-        <button class="iconbtn mic-inline ${st.dictatingKey==='radar'?'mic-listening':''}" data-act="dictate-radar" aria-label="${st.dictatingKey==='radar'?'Lyssnar, tryck för att stoppa':'Diktera'}">${ICON.mic}</button>
+        ${DICTATION_SUPPORTED?`<button class="iconbtn mic-inline ${st.dictatingKey==='radar'?'mic-listening':''}" data-act="dictate-radar" aria-label="${st.dictatingKey==='radar'?'Lyssnar, tryck för att stoppa':'Diktera'}">${ICON.mic}</button>`:''}
       </div>
       <button class="primary-btn" data-act="add-radar">${ICON.plusSmall}<span>Ny punkt</span></button>
     </div>
@@ -2166,11 +2173,12 @@ function vMatPanelList(){
 /* ---- streckkodsläsning (kamera + BarcodeDetector; polyfillas via barcode-polyfill.js där webbläsaren saknar stöd) ---- */
 let scannerStream = null, scannerFrame = null, barcodePolyfillPromise = null;
 function vBarcodeScanner(){
+  const msg = st.scannerLoading ? 'Förbereder streckkodsläsning…' : (st.scannerError || 'Rikta kameran mot streckkoden');
   return `
   <div class="mat-panel" style="background:#000">
     <button class="iconbtn" style="position:absolute;top:calc(16px + env(safe-area-inset-top,0px));left:16px;z-index:2" data-act="close-scanner" aria-label="Avbryt">${ICON.x}</button>
     <video id="scannerVideo" playsinline muted style="flex:1;width:100%;object-fit:cover"></video>
-    <p style="text-align:center;color:#fff;padding:16px;margin:0">${st.scannerLoading?'Förbereder streckkodsläsning…':'Rikta kameran mot streckkoden'}</p>
+    <p style="text-align:center;color:${st.scannerError?'#ff9494':'#fff'};padding:16px;margin:0">${msg}</p>
   </div>`;
 }
 function ensureBarcodeDetector(){
@@ -2186,12 +2194,18 @@ function ensureBarcodeDetector(){
   }
   return barcodePolyfillPromise;
 }
+function cameraErrorText(err){
+  if(err && (err.name==='NotAllowedError' || err.name==='SecurityError')) return 'Kameran nekades. Kolla appens kamerabehörighet i telefonens inställningar.';
+  if(err && err.name==='NotFoundError') return 'Hittar ingen kamera.';
+  if(err && err.name==='NotReadableError') return 'Kameran används redan av en annan app.';
+  return 'Kunde inte starta kameran' + (err&&err.name?' ('+err.name+')':'') + '.';
+}
 async function openBarcodeScanner(){
-  st.scannerOpen = true; st.scannerLoading = true; pushNav(); render();
+  st.scannerOpen = true; st.scannerLoading = true; st.scannerError = null; pushNav(); render();
   const supported = await ensureBarcodeDetector();
   if(!st.scannerOpen) return; // avbrutet medan polyfillen laddades
   if(!supported){
-    flash('Streckkodsläsning kunde inte startas (kräver internet första gången)');
+    flash('Streckkodsläsning kunde inte laddas (kräver internet första gången)', 3000);
     st.scannerOpen = false; history.back();
     return;
   }
@@ -2204,13 +2218,14 @@ async function openBarcodeScanner(){
     video.srcObject = stream;
     await video.play();
     const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','qr_code'] });
-    scannerTick(video, detector);
+    scannerTick(video, detector, 0);
   }catch(err){
-    flash('Kunde inte starta kameran');
+    console.error('openBarcodeScanner', err);
+    flash(cameraErrorText(err), 3000);
     history.back();
   }
 }
-function scannerTick(video, detector){
+function scannerTick(video, detector, errCount){
   scannerFrame = requestAnimationFrame(async ()=>{
     if(!st.scannerOpen) return;
     try{
@@ -2222,8 +2237,16 @@ function scannerTick(video, detector){
         flash('Streckkod avläst: '+code);
         return;
       }
-    }catch(err){}
-    scannerTick(video, detector);
+      errCount = 0;
+    }catch(err){
+      errCount++;
+      if(errCount===1) console.error('scannerTick detect()', err);
+      if(errCount===120 && !st.scannerError){ // ~2s vid 60fps av upprepade fel = avläsningen fungerar inte alls
+        st.scannerError = 'Kunde inte läsa streckkoder just nu (kolla att du har nät). Kameran är fortfarande på.';
+        render();
+      }
+    }
+    scannerTick(video, detector, errCount);
   });
 }
 function closeBarcodeScanner(){ history.back(); }
@@ -2274,7 +2297,7 @@ function vMaterialPanel(job){
           <span class="label">Beskriv arbetet</span>
           <div class="field-mic">
             <textarea placeholder="T.ex. Ny elcentral med 12 grupper, jordfelsbrytare och belysningsgrupper" data-field="ai-desc" autocomplete="off">${esc(st.aiDesc||'')}</textarea>
-            <button class="iconbtn mic-inline ${st.dictatingKey==='ai'?'mic-listening':''}" data-act="dictate-ai" aria-label="${st.dictatingKey==='ai'?'Lyssnar, tryck för att stoppa':'Diktera'}" style="top:24px;transform:none">${ICON.mic}</button>
+            ${DICTATION_SUPPORTED?`<button class="iconbtn mic-inline ${st.dictatingKey==='ai'?'mic-listening':''}" data-act="dictate-ai" aria-label="${st.dictatingKey==='ai'?'Lyssnar, tryck för att stoppa':'Diktera'}" style="top:24px;transform:none">${ICON.mic}</button>`:''}
           </div>
           <div style="margin-top:12px">
             <button class="primary-btn" data-act="ai-suggest">${ICON.sparkle}<span>${st.aiLoading?'Tänker…':'Föreslå material'}</span></button>
@@ -2306,10 +2329,10 @@ function vMaterialPanel(job){
       </div>
     </div>
     <div class="mat-panel-list" id="matPanelList">${vMatPanelList()}</div>
-    <div class="snabbval cols4">
+    <div class="snabbval ${DICTATION_SUPPORTED?'cols4':''}">
       <button data-act="switch-to-manual">${ICON.box}<span>Manuellt</span></button>
       <button data-act="scan-barcode">${ICON.barcode}<span>Streckkod</span></button>
-      <button data-act="dictate-material" class="${st.dictatingKey==='material'?'mic-listening':''}">${ICON.mic}<span>${st.dictatingKey==='material'?'Lyssnar…':'Diktera'}</span></button>
+      ${DICTATION_SUPPORTED?`<button data-act="dictate-material" class="${st.dictatingKey==='material'?'mic-listening':''}">${ICON.mic}<span>${st.dictatingKey==='material'?'Lyssnar…':'Diktera'}</span></button>`:''}
       <button data-act="switch-to-ai">${ICON.sparkle}<span>AI-förslag</span></button>
     </div>
   </div>`;
