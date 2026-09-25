@@ -662,17 +662,37 @@ function setAiKey(k){ if(k) localStorage.setItem('lirogo_ai_key', k); else local
 function getAiModel(){ return localStorage.getItem('lirogo_ai_model') || AI_MODEL_DEFAULT; }
 function setAiModel(m){ localStorage.setItem('lirogo_ai_model', m); }
 
+function anthropicHeaders(key){
+  return {
+    'content-type': 'application/json',
+    'x-api-key': key,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true'
+  };
+}
+async function testAiConnection(){
+  const key = getAiKey();
+  if(!key) throw new Error('no-key');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: anthropicHeaders(key),
+    body: JSON.stringify({ model: getAiModel(), max_tokens: 8, messages: [{ role:'user', content:'Svara med bara ordet OK.' }] })
+  });
+  if(!res.ok){
+    let msg = 'API-fel ('+res.status+')';
+    if(res.status===401) msg = 'Ogiltig API-nyckel';
+    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
+    throw new Error(msg);
+  }
+  return true;
+}
 async function fetchAiSuggestions(description){
   const key = getAiKey();
   if(!key) throw new Error('no-key');
   const system = 'Du är en erfaren svensk elektriker. Utifrån en kort beskrivning av ett arbete, lista 5-10 typiska elmaterial-komponenter som troligen behövs. Svara ENDAST med en JSON-array av korta svenska produktbeskrivningar (utan priser eller artikelnummer), t.ex. ["Automatsäkring 10A 1-pol","Jordfelsbrytare 25A 30mA","Kabelkanal 40x25mm"]. Inget annat i svaret, ingen förklaringstext.';
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01'
-    },
+    headers: anthropicHeaders(key),
     body: JSON.stringify({
       model: getAiModel(),
       max_tokens: 1024,
@@ -708,7 +728,7 @@ async function fetchAiJobSummary(job){
   if(job.changes) parts.push(`Ändringar/tillägg: ${job.changes}`);
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    headers: anthropicHeaders(key),
     body: JSON.stringify({ model: getAiModel(), max_tokens: 300, system, messages: [{ role:'user', content: parts.join('\n') }] })
   });
   if(!res.ok){
@@ -735,7 +755,7 @@ async function fetchAiJobAnswer(job, question){
   parts.push(`Fråga: ${question}`);
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    headers: anthropicHeaders(key),
     body: JSON.stringify({ model: getAiModel(), max_tokens: 400, system, messages: [{ role:'user', content: parts.join('\n') }] })
   });
   if(!res.ok){
@@ -791,7 +811,7 @@ async function fetchAiRadarSuggestion(job){
   if(insp.total) parts.push(`Egenkontroll: ${insp.done}/${insp.total} punkter genomförda${insp.done<insp.total?' (ofullständig — saknad dokumentation)':''}`);
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    headers: anthropicHeaders(key),
     body: JSON.stringify({ model: getAiModel(), max_tokens: 150, system, messages: [{ role:'user', content: parts.join('\n') }] })
   });
   if(!res.ok){
@@ -1687,7 +1707,7 @@ function vJobOversikt(job){
     </div>
 
     <div class="section-cards">
-      ${sectionCard('arbete', ICON.wrench, 'Arbete', prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar')}
+      ${sectionCard('arbete', ICON.wrench, 'Arbete', job.loggedHours ? `${fmtHours(job.loggedHours)} arbetad tid` : (prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar'))}
       ${sectionCard('material', ICON.box, 'Material', jobMaterials.length ? `${jobMaterials.length} artiklar` : 'Inga artiklar ännu')}
       ${sectionCard('dokumentation', ICON.camera, 'Dokumentation', jobPhotos.length ? `${jobPhotos.length} bilder` : 'Bilder, ritningar, dokument')}
       ${sectionCard('kontroll', ICON.gauge, 'Kontroll', insp.total ? `${insp.done} av ${insp.total} klara` : 'Egenkontroll ej påbörjad')}
@@ -1702,6 +1722,10 @@ function vJobArbete(job){
   return `
   ${vWizHeader('Arbete', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
+    <div class="section">
+      <div class="subsection-title">Arbetad tid</div>
+      <div class="row gap-xs"><input type="number" inputmode="decimal" value="${job.loggedHours||0}" data-field="job-logged-hours" style="flex:1"><span class="muted">h</span></div>
+    </div>
     <div class="section">
       <div class="subsection-title">Arbetsbeskrivning</div>
       <textarea placeholder="Kort beskrivning av arbetet…" data-field="job-description">${esc(job.description||'')}</textarea>
@@ -1878,7 +1902,7 @@ function vJobEkonomi(job){
     </div>
     <div class="section">
       <div class="summary-card" style="margin-top:0">
-        <div class="row between"><span class="muted">Arbetstid</span><span class="row gap-xs"><input type="number" inputmode="decimal" value="${job.loggedHours||0}" data-field="job-logged-hours" style="width:64px;padding:4px 8px;min-height:0;text-align:right"> h</span></div>
+        <div class="row between"><span class="muted">Arbetstid <span style="font-size:11px">(ändra i Arbete)</span></span><span>${fmtHours(job.loggedHours)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="muted">Arbetskostnad</span><span>${fmtKr(eco.labor)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="muted">Materialkostnad</span><span>${fmtKr(eco.material.cost)}</span></div>
         <div class="row between" style="margin-top:6px">
@@ -2557,6 +2581,10 @@ function vSettingsAi(){
             <span><b>Opus 5</b><br><span class="muted" style="font-size:12px">Bäst kvalitet, betydligt dyrare per förfrågan</span></span>
           </button>
         </div>
+        ${key ? `
+        <div style="margin-top:16px">
+          <button class="tile row-tile" data-act="test-ai-connection">${ICON.zap}<span class="t-text">${st.aiTestState==='testing'?'Testar…':'Testa anslutning'}<span class="t-sub" style="display:block;color:${st.aiTestState==='ok'?'var(--accent)':st.aiTestState==='error'?'var(--pri-urgent)':'var(--muted)'}">${(st.aiTestState==='ok'||st.aiTestState==='error') ? esc(st.aiTestMsg) : 'Skicka en testfråga för att se att nyckeln funkar'}</span></span></button>
+        </div>` : ''}
         ${key ? `<button class="muted" style="font-size:13px;margin-top:16px" data-act="clear-ai-key">Ta bort nyckel</button>` : ''}
       </div>
     </div>
@@ -2790,7 +2818,7 @@ $app.addEventListener('input', e=>{
     });
     return;
   }
-  if(f==='ai-key'){ setAiKey(t.value.trim()); return; }
+  if(f==='ai-key'){ setAiKey(t.value.trim()); st.aiTestState=null; return; }
   if(f==='report-email'){ setReportEmail(t.value.trim()); return; }
   if(f==='ical-url'){ setIcalUrl(t.value.trim()); return; }
   if(f==='price-search'){
@@ -2862,6 +2890,14 @@ $app.addEventListener('change', async e=>{
     photoObjectUrls[p.id] = URL.createObjectURL(file);
     flash('Foto sparat'); render();
   }
+});
+
+// Fält som visar/döljer knappar beroende på sitt värde (t.ex. "Testa
+// anslutning" som bara ska synas när en nyckel är ifylld) rerendrar när
+// man lämnar fältet, inte vid varje knapptryck — annars tappas fokus
+// mitt i inmatningen.
+$app.addEventListener('focusout', e=>{
+  if(e.target.dataset && e.target.dataset.field==='ai-key'){ render(); }
 });
 
 // Updates only the Nästa-button's disabled state and the missing-fields hint,
@@ -3180,7 +3216,23 @@ $app.addEventListener('click', async e=>{
   if(a==='open-calendar'){ calendarOpen=true; pushNav(); return render(); }
   if(a==='close-calendar'){ history.back(); return; }
   if(a==='choose-model'){ setAiModel(b.dataset.model); return render(); }
-  if(a==='clear-ai-key'){ setAiKey(''); flash('Nyckel borttagen'); return render(); }
+  if(a==='clear-ai-key'){ setAiKey(''); st.aiTestState=null; flash('Nyckel borttagen'); return render(); }
+  if(a==='test-ai-connection'){
+    st.aiTestState='testing'; st.aiTestMsg=''; render();
+    (async()=>{
+      try{
+        await testAiConnection();
+        st.aiTestState='ok'; st.aiTestMsg='Ansluten — nyckeln fungerar.';
+      }catch(err){
+        st.aiTestState='error';
+        st.aiTestMsg = err.message==='no-key' ? 'Ingen API-nyckel inlagd'
+          : err.message==='Failed to fetch' ? 'Kunde inte nå Anthropics API — kontrollera nätet'
+          : (err.message||'Något gick fel');
+      }
+      render();
+    })();
+    return;
+  }
   if(a==='toggle-fav'){ toggleFavoriteArtnr(b.dataset.artnr); return render(); }
   if(a==='bump-qty'){
     const row = catalogRow(b.dataset.artnr); if(!row) return;
