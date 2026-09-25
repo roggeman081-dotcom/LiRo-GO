@@ -482,6 +482,63 @@ async function bumpMaterialQty(jobId, row, delta, kind){
 
 /* ---- AI-förslag (Claude API, egen nyckel, direkt från webbläsaren) ---- */
 const AI_MODEL_DEFAULT = 'claude-haiku-4-5';
+/* ---- kalendersynk (skrivskyddad iCal-länk, t.ex. publicerad Outlook-kalender) ---- */
+let externalEvents = [];
+function getIcalUrl(){ return localStorage.getItem('lirogo_ical_url') || ''; }
+function setIcalUrl(u){ if(u) localStorage.setItem('lirogo_ical_url', u); else localStorage.removeItem('lirogo_ical_url'); }
+function getIcalMeta(){ try{ return JSON.parse(localStorage.getItem('lirogo_ical_meta')||'{}'); }catch{ return {}; } }
+function setIcalMeta(meta){ localStorage.setItem('lirogo_ical_meta', JSON.stringify(meta)); }
+function loadCachedIcalEvents(){
+  try{ externalEvents = JSON.parse(localStorage.getItem('lirogo_ical_events')||'[]'); }catch{ externalEvents=[]; }
+}
+function parseICSDate(val){
+  const m = val.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
+  if(!m) return null;
+  const [,y,mo,d,h,mi,s,z] = m;
+  if(h===undefined) return { date: new Date(Number(y), Number(mo)-1, Number(d)), allDay:true };
+  if(z) return { date: new Date(Date.UTC(Number(y),Number(mo)-1,Number(d),Number(h),Number(mi),Number(s))), allDay:false };
+  return { date: new Date(Number(y),Number(mo)-1,Number(d),Number(h),Number(mi),Number(s)), allDay:false };
+}
+function unescapeICSText(v){ return v.replace(/\\n/gi,' ').replace(/\\,/g,',').replace(/\\;/g,';').replace(/\\\\/g,'\\'); }
+function parseICS(text){
+  const rawLines = text.replace(/\r\n/g,'\n').split('\n');
+  const lines = [];
+  for(const line of rawLines){
+    if((line.startsWith(' ')||line.startsWith('\t')) && lines.length) lines[lines.length-1] += line.slice(1);
+    else lines.push(line);
+  }
+  const events = [];
+  let cur = null;
+  for(const line of lines){
+    if(line==='BEGIN:VEVENT'){ cur = {}; continue; }
+    if(line==='END:VEVENT'){ if(cur) events.push(cur); cur=null; continue; }
+    if(!cur) continue;
+    const idx = line.indexOf(':'); if(idx<0) continue;
+    const prop = line.slice(0,idx).split(';')[0].toUpperCase();
+    const value = line.slice(idx+1);
+    if(prop==='SUMMARY') cur.summary = unescapeICSText(value);
+    else if(prop==='DTSTART') cur.dtstart = parseICSDate(value);
+    else if(prop==='LOCATION') cur.location = unescapeICSText(value);
+  }
+  return events.filter(e=>e.dtstart).map(e=>({
+    title: e.summary || 'Namnlös händelse',
+    start: e.dtstart.date.toISOString(),
+    allDay: e.dtstart.allDay,
+    location: e.location || ''
+  }));
+}
+async function syncIcalCalendar(){
+  const url = getIcalUrl();
+  if(!url) throw new Error('no-url');
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('http-'+res.status);
+  const text = await res.text();
+  const events = parseICS(text);
+  externalEvents = events;
+  localStorage.setItem('lirogo_ical_events', JSON.stringify(events));
+  setIcalMeta({ lastSynced: new Date().toISOString(), count: events.length });
+}
+
 function getAiKey(){ return localStorage.getItem('lirogo_ai_key') || ''; }
 function setAiKey(k){ if(k) localStorage.setItem('lirogo_ai_key', k); else localStorage.removeItem('lirogo_ai_key'); }
 function getAiModel(){ return localStorage.getItem('lirogo_ai_model') || AI_MODEL_DEFAULT; }
@@ -1757,34 +1814,46 @@ function vMaterialPanel(job){
 
 /* ================= Kalender (agenda-lista över alla uppdrag) ================= */
 function vCalendarPanel(){
-  const withDate = jobs.filter(j=>j.plannedAt).sort((a,b)=>a.plannedAt.localeCompare(b.plannedAt));
+  const jobEntries = jobs.filter(j=>j.plannedAt).map(j=>({ type:'job', date:new Date(j.plannedAt), job:j }));
+  const extEntries = externalEvents.map(e=>({ type:'ext', date:new Date(e.start), event:e }));
   const withoutDate = jobs.filter(j=>!j.plannedAt);
 
   const groups = [];
-  for(const j of withDate){
-    const d = new Date(j.plannedAt);
-    const key = d.toDateString();
+  for(const entry of [...jobEntries, ...extEntries].sort((a,b)=>a.date-b.date)){
+    const key = entry.date.toDateString();
     let g = groups.find(x=>x.key===key);
-    if(!g){ g = { key, label: formatDateFor(d), jobs: [] }; groups.push(g); }
-    g.jobs.push(j);
+    if(!g){ g = { key, label: formatDateFor(entry.date), entries: [] }; groups.push(g); }
+    g.entries.push(entry);
   }
-  if(withoutDate.length) groups.push({ key:'none', label:'Ingen tid vald', jobs: withoutDate });
+  if(withoutDate.length) groups.push({ key:'none', label:'Ingen tid vald', entries: withoutDate.map(j=>({type:'job', job:j})) });
 
-  const jobRow = j => {
-    const c = customerOf(j);
+  const row = entry => {
+    if(entry.type==='job'){
+      const j = entry.job; const c = customerOf(j);
+      return `
+      <button class="row gap-sm" style="width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line)" data-act="open-job" data-id="${j.id}">
+        <div class="icon-circle" style="width:36px;height:36px;flex:0 0 36px">${ICON.wrench}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:15px">${esc(j.title)}</div>
+          <div class="muted" style="font-size:12px;margin-top:2px">${c?esc(c.name)+' · ':''}${esc(fmtTimeRange(j.plannedAt))}</div>
+        </div>
+      </button>`;
+    }
+    const e = entry.event;
     return `
-    <button class="row gap-sm" style="width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line)" data-act="open-job" data-id="${j.id}">
-      <div class="icon-circle" style="width:36px;height:36px;flex:0 0 36px">${ICON.wrench}</div>
+    <div class="row gap-sm" style="width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line)">
+      <div class="icon-circle" style="width:36px;height:36px;flex:0 0 36px">${ICON.calendar}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:15px">${esc(j.title)}</div>
-        <div class="muted" style="font-size:12px;margin-top:2px">${c?esc(c.name)+' · ':''}${esc(fmtTimeRange(j.plannedAt))}</div>
+        <div style="font-weight:600;font-size:15px">${esc(e.title)}</div>
+        <div class="muted" style="font-size:12px;margin-top:2px">${e.allDay?'Heldag':esc(fmtTimeRange(e.start))}${e.location?' · '+esc(e.location):''}</div>
       </div>
-    </button>`;
+      <span class="pill" style="flex:0 0 auto;font-size:11px">Outlook</span>
+    </div>`;
   };
 
   const body = groups.length ? groups.map(g=>`
     <div class="section-title" style="margin-top:18px">${esc(g.label)}</div>
-    <div class="card" style="padding:2px 16px">${g.jobs.map(jobRow).join('')}</div>
+    <div class="card" style="padding:2px 16px">${g.entries.map(row).join('')}</div>
   `).join('') : `<p class="empty" style="padding-left:0;margin-top:16px">Inga uppdrag ännu.</p>`;
 
   return `
@@ -1803,6 +1872,7 @@ function vSettingsPanel(){
   const tab = st.settingsTab;
   if(tab==='ai') return vSettingsAi();
   if(tab==='material') return vSettingsMaterial();
+  if(tab==='calendar') return vSettingsCalendar();
   return vSettingsHub();
 }
 function vSettingsHub(){
@@ -1818,6 +1888,9 @@ function vSettingsHub(){
       <button class="tile row-tile" data-act="open-settings-tab" data-tab="ai">${ICON.sparkle}<span class="t-text">AI-assistent<span class="t-sub" style="display:block">API-nyckel och modell</span></span>${ICON.chevronRight}</button>
       <div style="margin-top:12px">
         <button class="tile row-tile" data-act="open-settings-tab" data-tab="material">${ICON.box}<span class="t-text">Material<span class="t-sub" style="display:block">Egna priser per artikel</span></span>${ICON.chevronRight}</button>
+      </div>
+      <div style="margin-top:12px">
+        <button class="tile row-tile" data-act="open-settings-tab" data-tab="calendar">${ICON.calendar}<span class="t-text">Kalender<span class="t-sub" style="display:block">Synka med Outlook</span></span>${ICON.chevronRight}</button>
       </div>
     </div>
   </div>`;
@@ -1915,6 +1988,35 @@ function vSettingsMaterial(){
       </div>
       <div id="priceSearchResults">${vPriceSearchResults()}</div>
       ${entries.length ? `<div class="subsection-title" style="margin-top:20px">Egna priser</div><div class="card" style="padding:4px 16px">${rows}</div>` : `<p class="empty" style="margin-top:16px">Inga egna priser ännu.</p>`}
+    </div>
+  </div>`;
+}
+function vSettingsCalendar(){
+  const url = getIcalUrl();
+  const meta = getIcalMeta();
+  return `
+  <div class="mat-panel">
+    <div class="mat-panel-head">
+      <div class="mat-panel-title">
+        <button class="iconbtn" data-act="settings-tab-back" aria-label="Tillbaka">${ICON.chevronLeft}</button>
+        <h1>Kalender</h1>
+        <div style="width:44px"></div>
+      </div>
+    </div>
+    <div class="settings-body">
+      <p class="settings-note">Klistra in din Outlook-kalenderlänk (iCal) så visas dina Outlook-händelser tillsammans med dina uppdrag i Kalender-vyn. Skrivskyddat — appen kan bara läsa, aldrig ändra din kalender.</p>
+      <p class="settings-note" style="margin-top:8px">
+        I Outlook på webben: Inställningar → Kalender → Delade kalendrar → Publicera en kalender → välj "Kan visa alla detaljer" → Publicera. Klistra in ICS-länken du får här.
+      </p>
+      <div class="field" style="margin-top:16px">
+        <span class="label">Outlook-kalenderlänk (ICS)</span>
+        <input type="url" placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics" value="${esc(url)}" data-field="ical-url" autocomplete="off">
+      </div>
+      <div style="margin-top:16px">
+        <button class="primary-btn" data-act="sync-ical">${st.icalSyncing?'Synkar…':'Synka nu'}</button>
+      </div>
+      ${meta.lastSynced ? `<p class="settings-note" style="margin-top:12px">Senast synkad: ${esc(fmtDateTime(meta.lastSynced))} · ${meta.count||0} händelser</p>` : ''}
+      ${st.icalError ? `<p class="settings-note" style="margin-top:8px;color:var(--pri-urgent)">${esc(st.icalError)}</p>` : ''}
     </div>
   </div>`;
 }
@@ -2020,6 +2122,7 @@ $app.addEventListener('input', e=>{
     return;
   }
   if(f==='ai-key'){ setAiKey(t.value.trim()); return; }
+  if(f==='ical-url'){ setIcalUrl(t.value.trim()); return; }
   if(f==='price-search'){
     st.priceSearch = t.value;
     const box=document.getElementById('priceSearchResults'); if(box) box.innerHTML=vPriceSearchResults();
@@ -2261,6 +2364,17 @@ $app.addEventListener('click', async e=>{
   if(a==='open-settings-tab'){ st.settingsTab=b.dataset.tab; pushNav(); return render(); }
   if(a==='settings-tab-back'){ history.back(); return; }
   if(a==='reset-price-override'){ clearPriceOverride(b.dataset.artnr); return render(); }
+  if(a==='sync-ical'){
+    st.icalSyncing=true; st.icalError=null; render();
+    try{
+      await syncIcalCalendar();
+    }catch(err){
+      st.icalError = err.message==='no-url' ? 'Klistra in en kalenderlänk först'
+        : 'Kunde inte hämta kalendern. Kontrollera länken — om den stämmer kan Outlook blockera direkt webbläsaråtkomst (CORS), och då behövs en liten mellanserver för att lösa det.';
+    }
+    st.icalSyncing=false;
+    return render();
+  }
   if(a==='open-calendar'){ calendarOpen=true; pushNav(); return render(); }
   if(a==='close-calendar'){ history.back(); return; }
   if(a==='choose-model'){ setAiModel(b.dataset.model); return render(); }
@@ -2354,6 +2468,7 @@ $app.addEventListener('click', async e=>{
     inspection = await dbAll('inspection');
     await seedDemoIfEmpty();
   }catch(err){ console.error('Kunde inte öppna lagring', err); }
+  loadCachedIcalEvents();
   render();
 
   if('serviceWorker' in navigator){
