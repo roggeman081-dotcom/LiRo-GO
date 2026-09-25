@@ -134,6 +134,16 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 .section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 /* ---- job detail ---- */
 .job-body{padding:16px 16px 100px}
+
+/* ---- arbetsläge (timer) ---- */
+.work-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;max-width:520px;margin:0 auto;padding:24px}
+.work-label{font-size:14px;color:var(--muted)}
+.work-timer{font-size:56px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em;margin-top:6px}
+.work-project{margin-top:8px;color:var(--muted);font-size:15px;text-align:center}
+.work-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:48px;width:100%;max-width:360px}
+.work-btn{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 4px;border-radius:20px;background:var(--surface);font-size:12px;font-weight:600;text-align:center;position:relative;overflow:hidden}
+.work-btn svg{width:24px;height:24px;color:var(--accent)}
+.work-btn input[type="file"]{position:absolute;inset:0;opacity:0}
 .section{margin-top:28px}
 .section-cards{display:flex;flex-direction:column;gap:12px;margin-top:24px}
 .section-cards .row-tile{min-height:64px}
@@ -290,7 +300,7 @@ const PRIORITY_COLOR = {normal:'var(--pri-normal)',high:'var(--pri-high)',urgent
 let DB, customers=[], jobs=[];
 function openDB(){
   return new Promise((res,rej)=>{
-    const r=indexedDB.open('lirogo',3);
+    const r=indexedDB.open('lirogo',4);
     r.onupgradeneeded=()=>{
       const d=r.result;
       if(!d.objectStoreNames.contains('customers')) d.createObjectStore('customers',{keyPath:'id'});
@@ -298,6 +308,7 @@ function openDB(){
       if(!d.objectStoreNames.contains('photos')) d.createObjectStore('photos',{keyPath:'id'}).createIndex('job','jobId');
       if(!d.objectStoreNames.contains('materials')) d.createObjectStore('materials',{keyPath:'id'}).createIndex('job','jobId');
       if(!d.objectStoreNames.contains('checklist')) d.createObjectStore('checklist',{keyPath:'id'}).createIndex('job','jobId');
+      if(!d.objectStoreNames.contains('inspection')) d.createObjectStore('inspection',{keyPath:'id'}).createIndex('job','jobId');
     };
     r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
   });
@@ -341,7 +352,8 @@ async function createJob(input){
     isQuote:!!input.isQuote, status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now,
     siteUsesCustomerAddress: input.siteUsesCustomerAddress!==false,
     siteAddress: input.siteAddress||null, sitePostalCode: input.sitePostalCode||null, siteCity: input.siteCity||null,
-    changes:'', notes:'' };
+    changes:'', notes:'',
+    workStartedAt:null, workElapsedMs:0, summary:'' };
   await dbPut('jobs',j); jobs.push(j); return j;
 }
 function jobById(id){ return jobs.find(j=>j.id===id); }
@@ -351,6 +363,28 @@ function jobSiteAddressText(job){
   }
   const c = customerOf(job);
   return c ? (c.address||'') : '';
+}
+function jobElapsedMs(job){
+  return (job.workElapsedMs||0) + (job.workStartedAt ? (Date.now() - new Date(job.workStartedAt).getTime()) : 0);
+}
+function fmtDuration(ms){
+  const totalMin = Math.floor(ms/60000);
+  const h = Math.floor(totalMin/60), m = totalMin%60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(Math.floor((ms%60000)/1000)).padStart(2,'0')}`;
+}
+function fmtHours(ms){
+  return (ms/3600000).toLocaleString('sv-SE', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' h';
+}
+async function startWork(jobId){
+  const job = jobById(jobId); if(!job || job.workStartedAt) return;
+  job.workStartedAt = new Date().toISOString();
+  await dbPut('jobs', job);
+}
+async function pauseWork(jobId){
+  const job = jobById(jobId); if(!job || !job.workStartedAt) return;
+  job.workElapsedMs = (job.workElapsedMs||0) + (Date.now() - new Date(job.workStartedAt).getTime());
+  job.workStartedAt = null;
+  await dbPut('jobs', job);
 }
 
 /* ---- foton ---- */
@@ -410,8 +444,9 @@ function toggleFavoriteArtnr(artnr){
   lsSet('lirogo_fav_materials', list);
 }
 
-async function bumpMaterialQty(jobId, row, delta){
-  const existing = jobMaterials.find(m=>m.eNr===row[0]);
+async function bumpMaterialQty(jobId, row, delta, kind){
+  kind = kind||'used';
+  const existing = jobMaterials.find(m=>m.eNr===row[0] && (m.kind||'used')===kind);
   if(existing){
     const newQty = (Number(existing.qty)||0) + delta;
     if(newQty <= 0){
@@ -423,7 +458,7 @@ async function bumpMaterialQty(jobId, row, delta){
     await dbPut('materials', existing);
     return newQty;
   } else if(delta > 0){
-    const m = await addMaterial(jobId, { name: row[3], eNr: row[0], unit: row[2], unitPrice: row[1], qty: delta });
+    const m = await addMaterial(jobId, { name: row[3], eNr: row[0], unit: row[2], unitPrice: row[1], qty: delta, kind });
     jobMaterials.push(m);
     return delta;
   }
@@ -470,6 +505,33 @@ async function fetchAiSuggestions(description){
   catch{ return []; }
 }
 
+async function fetchAiJobSummary(job){
+  const key = getAiKey();
+  if(!key) throw new Error('no-key');
+  const system = 'Du är en erfaren svensk elektriker som skriver korta, professionella sammanfattningar av avslutade arbeten för fakturaunderlag och kundkommunikation. Svara med EN kort sammanfattande text på svenska (2-4 meningar). Inget annat i svaret.';
+  const cl = checklistProgress(job.id);
+  const insp = inspectionProgress(job.id);
+  const parts = [`Uppdrag: ${job.title}`];
+  if(job.description) parts.push(`Arbetsbeskrivning: ${job.description}`);
+  if(cl) parts.push(`Utförda moment: ${cl.items.map(i=>`${i.name} (${i.doneQty}/${i.targetQty})`).join(', ')}`);
+  if(insp.total) parts.push(`Egenkontroll: ${insp.done} av ${insp.total} punkter genomförda.`);
+  if(job.changes) parts.push(`Ändringar/tillägg: ${job.changes}`);
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: getAiModel(), max_tokens: 300, system, messages: [{ role:'user', content: parts.join('\n') }] })
+  });
+  if(!res.ok){
+    let msg = 'API-fel ('+res.status+')';
+    if(res.status===401) msg = 'Ogiltig API-nyckel';
+    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const textBlock = (data.content||[]).find(b=>b.type==='text');
+  return textBlock ? textBlock.text.trim() : '';
+}
+
 /* Matchar AI:ns fria textförslag ("Automatsäkring 10A 1-pol") mot riktiga
    rader i Ahlsell-katalogen. Katalognamnen är korta/förkortade, så vi söker
    på det mest utmärkande ordet i förslaget (oftast produkttypen, först i
@@ -492,10 +554,14 @@ function matchSuggestionsToCatalog(suggestions){
 
 async function addMaterial(jobId, input){
   const m={ id:uid(), jobId, name:input.name, description:input.description||'', eNr:input.eNr||'',
-    qty:input.qty||0, unit:input.unit||'st', unitPrice:input.unitPrice||0, createdAt:new Date().toISOString() };
+    qty:input.qty||0, unit:input.unit||'st', unitPrice:input.unitPrice||0, kind:input.kind||'used', createdAt:new Date().toISOString() };
   await dbPut('materials',m); return m;
 }
 async function deleteMaterial(id){ await dbDel('materials',id); }
+async function moveMaterialToUsed(id){
+  const m = jobMaterials.find(x=>x.id===id); if(!m) return;
+  m.kind='used'; await dbPut('materials', m);
+}
 async function setJobMarkup(jobId, percent){
   const j=jobById(jobId); if(!j) return;
   j.markupPercent=percent; await dbPut('jobs',j);
@@ -522,6 +588,40 @@ function checklistProgress(jobId){
   const done = items.reduce((s,i)=>s+(Number(i.doneQty)||0),0);
   return { items, target, done, percent: target>0 ? Math.round((done/target)*100) : 0 };
 }
+
+/* ---- egenkontroll (Före arbete / Under arbete / Före drifttagning) ---- */
+const INSPECTION_PHASES = [
+  { key:'fore', label:'Före arbete', defaults:['Förutsättningar kontrollerade','Spänningslöshet verifierad','Befintlig installation bedömd'] },
+  { key:'under', label:'Under arbete', defaults:['Material korrekt','Anslutningar kontrollerade','Installation utförd enligt plan'] },
+  { key:'drift', label:'Före drifttagning', defaults:['Visuell kontroll','Skyddsledarkontinuitet','Isolationsmätning','JFB-test','Funktionsprov','Märkning'] }
+];
+let inspection = [];
+async function seedInspectionIfEmpty(jobId){
+  if(inspection.some(i=>i.jobId===jobId)) return;
+  const batch = [];
+  for(const phase of INSPECTION_PHASES){
+    for(const name of phase.defaults){
+      batch.push({ id:uid(), jobId, phase:phase.key, name, checked:false, createdAt:new Date().toISOString() });
+    }
+  }
+  for(const it of batch){ await dbPut('inspection', it); inspection.push(it); }
+}
+async function addInspectionItem(jobId, phase, name){
+  const it = { id:uid(), jobId, phase, name, checked:false, createdAt:new Date().toISOString() };
+  await dbPut('inspection', it); inspection.push(it); return it;
+}
+async function toggleInspectionItem(id){
+  const it = inspection.find(i=>i.id===id); if(!it) return;
+  it.checked = !it.checked; await dbPut('inspection', it);
+}
+async function deleteInspectionItem(id){
+  await dbDel('inspection', id); inspection = inspection.filter(i=>i.id!==id);
+}
+function inspectionProgress(jobId){
+  const items = inspection.filter(i=>i.jobId===jobId);
+  const done = items.filter(i=>i.checked).length;
+  return { items, done, total: items.length };
+}
 async function seedDemoIfEmpty(){
   if(jobs.length>0) return;
   const c=await createCustomer({name:'Karlssons Fastigheter AB', phone:'070-123 45 67', address:'Industrivägen 12', postalCode:'123 45', city:'Göteborg', saveAsContact:true});
@@ -530,7 +630,7 @@ async function seedDemoIfEmpty(){
   await createJob({customerId:c.id, kind:'customer_job', title:'Felsökning elcentral', workType:'switchboard', plannedAt:today.toISOString(), priority:'high'});
   await createJob({customerId:c.id, kind:'customer_job', title:'Installation laddbox', workType:'charging', plannedAt:tomorrow.toISOString(), priority:'normal'});
 }
-function todaysJobs(){ return jobs.filter(j=>j.status!=='done').sort((a,b)=>(a.plannedAt||'').localeCompare(b.plannedAt||'')); }
+function todaysJobs(){ return jobs.filter(j=>j.status!=='done'&&j.status!=='invoiced').sort((a,b)=>(a.plannedAt||'').localeCompare(b.plannedAt||'')); }
 function customerOf(j){ return customers.find(c=>c.id===j.customerId); }
 
 /* ================= Formattering ================= */
@@ -556,9 +656,10 @@ function fmtDateTime(plannedAt){
   return `${days[d.getDay()]} ${day}/${month} ${time}`;
 }
 function statusLabel(status){
+  if(status==='invoiced') return {l:'Fakturerat', on:false};
+  if(status==='done') return {l:'Klart', on:false};
   if(status==='ongoing') return {l:'Pågår', on:true};
   if(status==='tomorrow') return {l:'Imorgon', on:false};
-  if(status==='done') return {l:'Klart', on:false};
   return {l:'Senare', on:false};
 }
 
@@ -578,14 +679,16 @@ const $app = document.getElementById('app');
    lyssnaren. Så gör alla "tillbaka"-vägar exakt samma sak, oavsett om
    de kom från en knapp i appen eller telefonens egen knapp. */
 function pushNav(){ history.pushState({}, ''); }
-function closeTopLayer(){
+async function closeTopLayer(){
   if(settingsOpen){ settingsOpen=false; return; }
   if(calendarOpen){ calendarOpen=false; return; }
+  if(st.workNoteOpen){ st.workNoteOpen=false; return; }
   if(st.openPhoto){ st.openPhoto=null; return; }
   if(st.matPanel){
     if(st.matPanelMode && st.matPanelMode!=='browse'){ st.matPanelMode='browse'; st.matDraft={}; return; }
     st.matPanel=false; return;
   }
+  if(st.view==='work'){ await pauseWork(st.id); st.view='job'; st.jobTab='oversikt'; return; }
   if(st.view==='wizard'){
     if(st.step===0){ st={view:'home'}; return; }
     st.step -= 1; return;
@@ -594,7 +697,7 @@ function closeTopLayer(){
   if(st.view==='job'){ st={view:'home'}; return; }
   if(st.view==='projects'){ st={view:'home'}; return; }
 }
-window.addEventListener('popstate', ()=>{ closeTopLayer(); render(); });
+window.addEventListener('popstate', async ()=>{ await closeTopLayer(); render(); });
 
 function emptyDraft(){
   return { kind:null, method:null, existingCustomerId:null,
@@ -1043,7 +1146,7 @@ async function loadJobDetail(id){
   jobPhotos.forEach(p=>{ photoObjectUrls[p.id] = URL.createObjectURL(p.blob); });
 }
 function materialTotals(job){
-  const cost = jobMaterials.reduce((sum,m)=>sum + (Number(m.qty)||0) * (Number(m.unitPrice)||0), 0);
+  const cost = jobMaterials.filter(m=>m.kind!=='planned').reduce((sum,m)=>sum + (Number(m.qty)||0) * (Number(m.unitPrice)||0), 0);
   const markup = job.markupPercent ?? 15;
   const markupSum = cost * (markup/100);
   return { cost, markup, markupSum, total: cost + markupSum };
@@ -1092,6 +1195,8 @@ function vJobDetail(id){
   if(tab==='dokumentation') return vJobDokumentation(job);
   if(tab==='kontroll') return vJobKontroll(job);
   if(tab==='ekonomi') return vJobEkonomi(job);
+  if(tab==='avsluta') return vJobAvsluta(job);
+  if(tab==='faktura') return vJobFaktura(job);
   return vJobOversikt(job);
 }
 
@@ -1100,6 +1205,7 @@ function vJobOversikt(job){
   const c = customerOf(job);
   const s = statusLabel(job.status);
   const prog = checklistProgress(job.id);
+  const insp = inspectionProgress(job.id);
   const t = materialTotals(job);
   const siteAddr = jobSiteAddressText(job);
 
@@ -1108,6 +1214,14 @@ function vJobOversikt(job){
       ${icon}<span class="t-text">${esc(title)}<span class="t-sub" style="display:block">${esc(sub)}</span></span>
       ${ICON.chevronRight}
     </button>`;
+
+  const hasWorkTime = !!job.workStartedAt || (job.workElapsedMs||0) > 0;
+  const finished = job.status==='done' || job.status==='invoiced';
+  let primaryLabel, primaryAct;
+  if(job.status==='invoiced'){ primaryLabel='Visa fakturaunderlag'; primaryAct='open-faktura'; }
+  else if(job.status==='done'){ primaryLabel='Skapa fakturaunderlag'; primaryAct='open-faktura'; }
+  else if(hasWorkTime){ primaryLabel='Fortsätt arbete'; primaryAct='enter-work'; }
+  else { primaryLabel='Starta arbete'; primaryAct='enter-work'; }
 
   return `
   ${vWizHeader(job.title, false, undefined, undefined, 'job-back')}
@@ -1125,11 +1239,16 @@ function vJobOversikt(job){
       <div class="muted row gap-xs" style="margin-top:6px">${ICON.clock}<span>${esc(fmtDateTime(job.plannedAt))}</span></div>
     </div>
 
+    <div style="margin-top:20px">
+      <button class="primary-btn" style="width:100%" data-act="${primaryAct}">${primaryLabel}</button>
+      ${!finished ? `<button class="muted" style="width:100%;text-align:center;margin-top:12px;font-size:14px;font-weight:600" data-act="open-job-tab" data-tab="avsluta">Avsluta uppdrag</button>` : ''}
+    </div>
+
     <div class="section-cards">
       ${sectionCard('arbete', ICON.wrench, 'Arbete', prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar')}
       ${sectionCard('material', ICON.box, 'Material', jobMaterials.length ? `${jobMaterials.length} artiklar` : 'Inga artiklar ännu')}
       ${sectionCard('dokumentation', ICON.camera, 'Dokumentation', jobPhotos.length ? `${jobPhotos.length} bilder` : 'Bilder, ritningar, dokument')}
-      ${sectionCard('kontroll', ICON.gauge, 'Kontroll', 'Egenkontroll — kommer snart')}
+      ${sectionCard('kontroll', ICON.gauge, 'Kontroll', insp.total ? `${insp.done} av ${insp.total} klara` : 'Egenkontroll ej påbörjad')}
       ${sectionCard('ekonomi', ICON.calc, 'Ekonomi', `Totalt ${fmtKr(t.total)}`)}
     </div>
   </div>`;
@@ -1160,7 +1279,11 @@ function vJobArbete(job){
 
 /* ---- Uppdrag: Material ---- */
 function vJobMaterial(job){
-  const materialRows = jobMaterials.map(m=>{
+  const tab = st.matListTab || 'anvant';
+  const usedRows = jobMaterials.filter(m=>m.kind!=='planned');
+  const plannedRows = jobMaterials.filter(m=>m.kind==='planned');
+
+  const usedRowsHtml = usedRows.map(m=>{
     const myPrice = (Number(m.qty)||0) * (Number(m.unitPrice)||0);
     const markupAmt = myPrice * ((job.markupPercent||0)/100);
     const customerPrice = myPrice + markupAmt;
@@ -1179,16 +1302,35 @@ function vJobMaterial(job){
     </div>`;
   }).join('');
 
+  const plannedRowsHtml = plannedRows.map(m=>`
+    <div class="material-row" data-mid="${m.id}">
+      <div class="material-info">
+        <div class="material-name">${esc(m.name)}</div>
+        <div class="material-sub">${[m.eNr?('E-nr '+esc(m.eNr)):'', esc(m.qty)+' '+esc(m.unit)].filter(Boolean).join(' · ')}</div>
+      </div>
+      <button class="accent" style="font-size:12px;font-weight:600;flex:0 0 auto" data-act="move-material-to-used" data-id="${m.id}">Flytta till Använt</button>
+      <button class="material-del" data-act="delete-material" data-id="${m.id}">${ICON.trash}</button>
+    </div>`).join('');
+
   return `
   ${vWizHeader('Material', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
+    <div class="mat-tabs">
+      <button class="mat-tab ${tab==='planerat'?'on':''}" data-act="set-material-tab" data-tab="planerat">Planerat</button>
+      <button class="mat-tab ${tab!=='planerat'?'on':''}" data-act="set-material-tab" data-tab="anvant">Använt</button>
+    </div>
+    ${tab==='planerat' ? `
+    <div class="section">
+      <p class="muted" style="margin-bottom:12px">Material från offert eller AI-förslag hamnar här tills det faktiskt används.</p>
+      ${plannedRows.length? `<div class="card" style="padding:4px 16px">${plannedRowsHtml}</div>` : `<p class="empty" style="padding-left:0">Inget planerat material än. AI-förslag i Registrera material lägger till här.</p>`}
+    </div>` : `
     <div class="section">
       <div class="actions-row">
         <button class="tile row-tile" data-act="open-mat-panel">${ICON.box}<span class="t-text">Registrera material<span class="t-sub" style="display:block">Sök, senaste eller favoriter</span></span></button>
         <button class="tile row-tile off">${ICON.cart}<span class="t-text">Importera order<span class="t-sub" style="display:block">Ahlsell – kommer snart</span></span></button>
       </div>
-      ${jobMaterials.length? `<div class="card" style="margin-top:16px;padding:4px 16px">${materialRows}</div>` : `<p class="empty" style="padding-left:0;margin-top:16px">Inga artiklar tillagda än.</p>`}
-    </div>
+      ${usedRows.length? `<div class="card" style="margin-top:16px;padding:4px 16px">${usedRowsHtml}</div>` : `<p class="empty" style="padding-left:0;margin-top:16px">Inga artiklar tillagda än.</p>`}
+    </div>`}
   </div>
   ${st.matPanel ? vMaterialPanel(job) : ''}`;
 }
@@ -1244,17 +1386,40 @@ function vJobDokumentation(job){
 
 /* ---- Uppdrag: Kontroll (struktur klar, innehåll i nästa steg) ---- */
 function vJobKontroll(job){
-  const categories = ['Före arbete','Under arbete','Före drifttagning','Slutkontroll'];
+  const prog = inspectionProgress(job.id);
+  const phaseBlock = (phase) => {
+    const items = prog.items.filter(i=>i.phase===phase.key);
+    const rows = items.map(it=>`
+      <div class="checklist-row" data-cid="${it.id}">
+        <button class="checklist-check ${it.checked?'done':''}" data-act="toggle-inspection" data-id="${it.id}" aria-label="Bocka av">${ICON.check}</button>
+        <div class="checklist-info"><div class="checklist-name">${esc(it.name)}</div></div>
+        <button class="checklist-del" data-act="delete-inspection-item" data-id="${it.id}" aria-label="Ta bort">${ICON.trash}</button>
+      </div>`).join('');
+    return `
+    <div class="section">
+      <div class="subsection-title">${esc(phase.label)}</div>
+      ${items.length ? `<div class="card" style="padding:4px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">Inga punkter.</p>`}
+      <div class="add-form" style="margin-top:12px">
+        <div class="row2" style="grid-template-columns:1fr auto">
+          <input type="text" placeholder="Ny kontrollpunkt…" value="${esc((st.inspDraft&&st.inspDraft[phase.key])||'')}" data-field="insp-name" data-phase="${phase.key}">
+          <button class="primary-btn" style="padding:0 20px" data-act="add-inspection-item" data-phase="${phase.key}">${ICON.plusSmall}<span>Lägg till</span></button>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const slutStatus = prog.total===0 ? 'Ingen kontroll påbörjad' : (prog.done===prog.total ? 'Kontroll klar' : `${prog.total-prog.done} punkter kvar`);
+
   return `
   ${vWizHeader('Kontroll', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
-    <p class="muted">Egenkontrollen byggs i nästa steg. Här kommer du kunna bocka av kontrollpunkter i fyra faser:</p>
-    <div class="card" style="margin-top:12px;padding:4px 16px">
-      ${categories.map(cat=>`
-        <div class="checklist-row">
-          <div class="checklist-info"><div class="checklist-name">${esc(cat)}</div></div>
-          <span class="pill">Kommer snart</span>
-        </div>`).join('')}
+    ${INSPECTION_PHASES.map(phaseBlock).join('')}
+    <div class="section">
+      <div class="subsection-title">Slutkontroll</div>
+      <div class="card row between">
+        <span class="bold">${esc(slutStatus)}</span>
+        ${prog.total>0?`<span class="muted">${prog.done} av ${prog.total}</span>`:''}
+      </div>
     </div>
   </div>`;
 }
@@ -1267,7 +1432,7 @@ function vJobEkonomi(job){
   <div class="job-body">
     <div class="section">
       <div class="summary-card" style="margin-top:0">
-        <div class="row between"><span class="muted">Arbetstid</span><span class="muted">Kommer med Arbetsläge</span></div>
+        <div class="row between"><span class="muted">Arbetstid</span><span>${jobElapsedMs(job)>0?fmtHours(jobElapsedMs(job)):'Ingen tid loggad än'}</span></div>
         <div class="row between" style="margin-top:6px"><span class="muted">Materialkostnad</span><span>${fmtKr(t.cost)}</span></div>
         <div class="row between" style="margin-top:6px">
           <span class="muted">Påslag</span>
@@ -1284,9 +1449,119 @@ function vJobEkonomi(job){
   </div>`;
 }
 
+/* ---- Uppdrag: Avsluta ---- */
+function vJobAvsluta(job){
+  const insp = inspectionProgress(job.id);
+  const usedCount = jobMaterials.filter(m=>m.kind!=='planned').length;
+  const items = [
+    { label:'Tid', ok: jobElapsedMs(job)>0, okText: fmtHours(jobElapsedMs(job)), badText:'Ingen tid loggad' },
+    { label:'Material', ok: usedCount>0, okText:`${usedCount} artiklar`, badText:'Inga artiklar registrerade' },
+    { label:'Bilder', ok: jobPhotos.length>0, okText:`${jobPhotos.length} bilder`, badText:'Inga bilder' },
+    { label:'Egenkontroll', ok: insp.total>0 && insp.done===insp.total, okText:'Klar', badText: insp.total ? `${insp.total-insp.done} punkter kvar` : 'Ingen kontroll påbörjad' },
+    { label:'Anteckningar', ok: !!(job.notes&&job.notes.trim()), okText:'Ifyllda', badText:'Inga anteckningar' }
+  ];
+  const rows = items.map(it=>`
+    <div class="checklist-row">
+      <div class="checklist-info"><div class="checklist-name">${esc(it.label)}</div></div>
+      <span class="row gap-xs" style="font-size:13px;font-weight:600;color:${it.ok?'var(--accent)':'var(--muted)'}">
+        ${it.ok?ICON.check:''}<span>${esc(it.ok?it.okText:it.badText)}</span>
+      </span>
+    </div>`).join('');
+
+  return `
+  ${vWizHeader('Redo att avsluta?', false, undefined, undefined, 'job-tab-back')}
+  <div class="job-body">
+    <div class="card" style="padding:4px 16px">${rows}</div>
+    <div style="margin-top:20px">
+      <button class="primary-btn" style="width:100%" data-act="finish-job" data-id="${job.id}">Avsluta uppdrag</button>
+    </div>
+  </div>`;
+}
+
+/* ---- Uppdrag: Fakturaunderlag ---- */
+function vJobFaktura(job){
+  const t = materialTotals(job);
+  const usedRows = jobMaterials.filter(m=>m.kind!=='planned');
+  return `
+  ${vWizHeader('Fakturaunderlag', false, undefined, undefined, 'job-tab-back')}
+  <div class="job-body">
+    <div class="card">
+      <div class="row between"><span class="muted">Arbetstid</span><span class="bold">${fmtHours(jobElapsedMs(job))}</span></div>
+      <div class="row between" style="margin-top:8px"><span class="muted">Material (${usedRows.length} artiklar)</span><span class="bold">${fmtKr(t.cost)}</span></div>
+      <div class="row between" style="margin-top:8px"><span class="muted">Påslag (${job.markupPercent}%)</span><span class="bold">${fmtKr(t.markupSum)}</span></div>
+      <div class="row between" style="margin-top:8px"><span class="muted">Övriga kostnader</span><span class="muted">Kommer snart</span></div>
+      <div class="summary-total"><span>Totalt</span><span>${fmtKr(t.total)}</span></div>
+    </div>
+
+    <div class="section">
+      <div class="subsection-title">Kort arbetsbeskrivning</div>
+      <p>${esc(job.description||'—')}</p>
+    </div>
+
+    <div class="section">
+      <div class="subsection-title">AI-sammanfattning</div>
+      <textarea placeholder="Skriv en sammanfattning eller låt AI föreslå en…" data-field="job-summary">${esc(job.summary||'')}</textarea>
+      <div style="margin-top:10px">
+        <button class="tile row-tile" data-act="ai-job-summary" data-id="${job.id}">${ICON.sparkle}<span class="t-text">${st.aiSummaryLoading?'Tänker…':'Skapa AI-förslag'}<span class="t-sub" style="display:block">${getAiKey()?'Baserat på beskrivning, att göra och egenkontroll':'Kräver API-nyckel i Inställningar'}</span></span></button>
+      </div>
+    </div>
+
+    <div class="section">
+      <button class="tile row-tile off">${ICON.cart}<span class="t-text">Exportera till Fortnox<span class="t-sub" style="display:block">Kommer snart</span></span></button>
+    </div>
+
+    ${job.status!=='invoiced' ? `<div style="margin-top:16px"><button class="primary-btn" style="width:100%" data-act="mark-invoiced" data-id="${job.id}">Markera som fakturerat</button></div>` : `<p class="empty" style="margin-top:16px">Fakturerat.</p>`}
+  </div>`;
+}
+
+/* ---- Arbetsläge (timer) ---- */
+let workTimerInterval = null;
+function vArbetslage(job){
+  return `
+  <div class="work-screen">
+    <button class="iconbtn" style="position:absolute;top:16px;left:16px" data-act="work-pause" aria-label="Pausa">${ICON.x}</button>
+    <div class="work-label">Pågående arbete</div>
+    <div class="work-timer" id="workTimer">${fmtDuration(jobElapsedMs(job))}</div>
+    <div class="work-project">${esc(job.title)}</div>
+    <div class="work-actions">
+      <button class="work-btn" data-act="open-mat-panel">${ICON.box}<span>Material</span></button>
+      <label class="work-btn">
+        ${ICON.camera}<span>Ta bild</span>
+        <input type="file" accept="image/*" capture="environment" data-photo-input="1">
+      </label>
+      <button class="work-btn" data-act="work-note">${ICON.save}<span>Anteckning</span></button>
+      <button class="work-btn" data-act="work-goto-kontroll">${ICON.gauge}<span>Kontroll</span></button>
+      <button class="work-btn" data-act="work-ai">${ICON.sparkle}<span>Fråga LiRo AI</span></button>
+    </div>
+  </div>
+  ${st.matPanel ? vMaterialPanel(job) : ''}
+  ${st.workNoteOpen ? vWorkNotePanel() : ''}`;
+}
+function vWorkNotePanel(){
+  return `
+  <div class="mat-panel" style="justify-content:center;padding:16px">
+    <div class="card">
+      <div class="label" style="margin-bottom:8px">Snabbanteckning</div>
+      <textarea placeholder="Skriv en anteckning…" data-field="work-note-text">${esc(st.workNoteText||'')}</textarea>
+      <div class="row between" style="margin-top:12px">
+        <button class="muted" data-act="work-note-cancel">Avbryt</button>
+        <button class="primary-btn" data-act="work-note-save">Spara</button>
+      </div>
+    </div>
+  </div>`;
+}
+function afterWork(){
+  const job = jobById(st.id); if(!job) return;
+  workTimerInterval = setInterval(()=>{
+    const el = document.getElementById('workTimer');
+    if(el) el.textContent = fmtDuration(jobElapsedMs(job));
+  }, 1000);
+}
+
 /* ================= Registrera material (panel) ================= */
-function vMatQtyRow(row){
-  const existing = jobMaterials.find(m=>m.eNr===row[0]);
+function vMatQtyRow(row, kind){
+  kind = kind||'used';
+  const existing = jobMaterials.find(m=>m.eNr===row[0] && (m.kind||'used')===kind);
   const qty = existing ? existing.qty : 0;
   const favs = getFavoriteArtnrs();
   const isFav = favs.includes(row[0]);
@@ -1299,9 +1574,9 @@ function vMatQtyRow(row){
       </div>
       <button class="mat-fav ${isFav?'on':''}" data-act="toggle-fav" data-artnr="${esc(row[0])}">${isFav?ICON.starFill:ICON.star}</button>
       <div class="stepper">
-        <button data-act="bump-qty" data-artnr="${esc(row[0])}" data-delta="-1" aria-label="Minska">${ICON.minus}</button>
+        <button data-act="bump-qty" data-artnr="${esc(row[0])}" data-delta="-1" data-kind="${kind}" aria-label="Minska">${ICON.minus}</button>
         <span class="qty">${qty}</span>
-        <button data-act="bump-qty" data-artnr="${esc(row[0])}" data-delta="1" aria-label="Öka">${ICON.plusSmall}</button>
+        <button data-act="bump-qty" data-artnr="${esc(row[0])}" data-delta="1" data-kind="${kind}" aria-label="Öka">${ICON.plusSmall}</button>
       </div>
     </div>`;
 }
@@ -1322,7 +1597,7 @@ function vMatPanelList(){
     const msg = q.trim().length>=2 ? 'Inga träffar.' : st.matTab==='favorites' ? 'Inga favoriter än — tryck på stjärnan på en artikel.' : 'Inget sökt eller tillagt ännu. Sök ovan för att komma igång.';
     return `<p class="muted" style="padding:16px 0">${msg}</p>`;
   }
-  return rows.map(vMatQtyRow).join('');
+  return rows.map(row=>vMatQtyRow(row)).join('');
 }
 function vMaterialPanel(job){
   const mode = st.matPanelMode || 'browse';
@@ -1499,13 +1774,14 @@ function vAiResults(){
   if(st.aiError) return `<p class="muted" style="padding:8px 0">${esc(st.aiError)}</p>`;
   if(!st.aiMatches) return '';
   if(!st.aiMatches.length) return `<p class="muted" style="padding:8px 0">Inga matchande artiklar hittades i katalogen för förslagen.</p>`;
-  return `<div class="label" style="margin-bottom:4px">Förslag från AI, matchade mot katalogen</div>` + st.aiMatches.map(vMatQtyRow).join('');
+  return `<div class="label" style="margin-bottom:4px">Förslag från AI, matchade mot katalogen — läggs i Planerat material</div>` + st.aiMatches.map(row=>vMatQtyRow(row,'planned')).join('');
 }
 
 /* ================= Render dispatch ================= */
 let settingsOpen = false;
 let calendarOpen = false;
 function render(){
+  if(workTimerInterval){ clearInterval(workTimerInterval); workTimerInterval=null; }
   if(st.view==='opening'){ $app.innerHTML = vOpening(); afterOpening(); return; }
   if(st.view==='home'){ $app.innerHTML = vHome() + (calendarOpen?vCalendarPanel():'') + (settingsOpen?vSettingsPanel():''); afterHome(); return; }
   if(st.view==='projects'){ $app.innerHTML = vProjects() + (settingsOpen?vSettingsPanel():''); return; }
@@ -1515,6 +1791,13 @@ function render(){
     return;
   }
   if(st.view==='job'){ $app.innerHTML = vJobDetail(st.id) + (settingsOpen?vSettingsPanel():''); return; }
+  if(st.view==='work'){
+    const job = jobById(st.id);
+    if(!job){ st={view:'home'}; return render(); }
+    $app.innerHTML = vArbetslage(job) + (settingsOpen?vSettingsPanel():'');
+    afterWork();
+    return;
+  }
 }
 
 /* ================= Events ================= */
@@ -1556,12 +1839,13 @@ $app.addEventListener('input', e=>{
     const box=document.getElementById('matPanelList'); if(box) box.innerHTML=vMatPanelList();
     return;
   }
-  if(f==='job-description'||f==='job-changes'||f==='job-notes'){
+  if(f==='job-description'||f==='job-changes'||f==='job-notes'||f==='job-summary'){
     const job=jobById(st.id); if(!job) return;
-    const key = f==='job-description'?'description':f==='job-changes'?'changes':'notes';
+    const key = f==='job-description'?'description':f==='job-changes'?'changes':f==='job-notes'?'notes':'summary';
     job[key]=t.value; dbPut('jobs', job);
     return;
   }
+  if(f==='work-note-text'){ st.workNoteText=t.value; return; }
   if(f==='markup'){
     const job=jobById(st.id); if(!job) return;
     const percent = Number(t.value)||0;
@@ -1589,6 +1873,7 @@ $app.addEventListener('input', e=>{
   if(f==='ai-desc'){ st.aiDesc = t.value; return; }
   if(f==='cl-name'){ st.clDraft=st.clDraft||{}; st.clDraft.name=t.value; return; }
   if(f==='cl-qty'){ st.clDraft=st.clDraft||{}; st.clDraft.qty=t.value; return; }
+  if(f==='insp-name'){ st.inspDraft=st.inspDraft||{}; st.inspDraft[t.dataset.phase]=t.value; return; }
 });
 
 $app.addEventListener('change', async e=>{
@@ -1633,8 +1918,67 @@ $app.addEventListener('click', async e=>{
     st={view:'job', id}; pushNav(); return render();
   }
   if(a==='job-back'){ history.back(); return; }
-  if(a==='open-job-tab'){ st.jobTab=b.dataset.tab; pushNav(); return render(); }
+  if(a==='open-job-tab'){
+    st.jobTab=b.dataset.tab; pushNav();
+    if(b.dataset.tab==='kontroll') await seedInspectionIfEmpty(st.id);
+    return render();
+  }
   if(a==='job-tab-back'){ history.back(); return; }
+
+  /* ---- arbetsläge ---- */
+  if(a==='enter-work'){
+    const job=jobById(st.id); if(!job) return;
+    if(!job.workStartedAt) await startWork(st.id);
+    st.view='work'; pushNav(); return render();
+  }
+  if(a==='work-pause'){ history.back(); return; }
+  if(a==='work-goto-kontroll'){
+    st.view='job'; st.jobTab='kontroll'; pushNav();
+    await seedInspectionIfEmpty(st.id);
+    return render();
+  }
+  if(a==='work-note'){ st.workNoteOpen=true; st.workNoteText=''; return render(); }
+  if(a==='work-note-cancel'){ st.workNoteOpen=false; return render(); }
+  if(a==='work-note-save'){
+    const text=(st.workNoteText||'').trim();
+    if(!text){ flash('Skriv något först'); return; }
+    const job=jobById(st.id); if(!job) return;
+    const stamp = new Date().toLocaleString('sv-SE',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
+    job.notes = (job.notes?job.notes+'\n\n':'') + `[${stamp}] ${text}`;
+    await dbPut('jobs', job);
+    st.workNoteOpen=false; flash('Anteckning sparad');
+    return render();
+  }
+  if(a==='work-ai'){ flash('Fråga LiRo AI kommer snart'); return; }
+
+  /* ---- avsluta / fakturaunderlag ---- */
+  if(a==='open-faktura'){ st.jobTab='faktura'; pushNav(); return render(); }
+  if(a==='finish-job'){
+    const job=jobById(b.dataset.id); if(!job) return;
+    if(job.workStartedAt) await pauseWork(job.id);
+    job.status='done'; await dbPut('jobs', job);
+    st.jobTab='faktura'; pushNav();
+    flash('Uppdrag avslutat');
+    return render();
+  }
+  if(a==='mark-invoiced'){
+    const job=jobById(b.dataset.id); if(!job) return;
+    job.status='invoiced'; await dbPut('jobs', job);
+    flash('Markerat som fakturerat');
+    return render();
+  }
+  if(a==='ai-job-summary'){
+    const job=jobById(b.dataset.id); if(!job) return;
+    st.aiSummaryLoading=true; render();
+    try{
+      job.summary = await fetchAiJobSummary(job);
+      await dbPut('jobs', job);
+    }catch(err){
+      flash(err.message==='no-key' ? 'Ingen API-nyckel inlagd' : (err.message||'Något gick fel'));
+    }
+    st.aiSummaryLoading=false;
+    return render();
+  }
 
   if(a==='wiz-back'){ history.back(); return; }
   if(a==='wiz-goto'){ st.step = +b.dataset.step; pushNav(); return render(); }
@@ -1762,7 +2106,7 @@ $app.addEventListener('click', async e=>{
   if(a==='bump-qty'){
     const row = catalogRow(b.dataset.artnr); if(!row) return;
     const delta = Number(b.dataset.delta);
-    await bumpMaterialQty(st.id, row, delta);
+    await bumpMaterialQty(st.id, row, delta, b.dataset.kind);
     if(delta>0) pushRecentArtnr(row[0]);
     return render();
   }
@@ -1791,7 +2135,11 @@ $app.addEventListener('click', async e=>{
     jobMaterials = jobMaterials.filter(m=>m.id!==b.dataset.id);
     return render();
   }
-  if(a==='save-materialplan'){ flash('Materialplan sparad'); return; }
+  if(a==='set-material-tab'){ st.matListTab=b.dataset.tab; return render(); }
+  if(a==='move-material-to-used'){
+    await moveMaterialToUsed(b.dataset.id);
+    return render();
+  }
 
   /* ---- checklista ---- */
   if(a==='add-checklist-item'){
@@ -1808,6 +2156,19 @@ $app.addEventListener('click', async e=>{
     await deleteChecklistItem(b.dataset.id);
     return render();
   }
+
+  /* ---- egenkontroll ---- */
+  if(a==='toggle-inspection'){ await toggleInspectionItem(b.dataset.id); return render(); }
+  if(a==='delete-inspection-item'){ await deleteInspectionItem(b.dataset.id); return render(); }
+  if(a==='add-inspection-item'){
+    const phase = b.dataset.phase;
+    const name = ((st.inspDraft&&st.inspDraft[phase])||'').trim();
+    if(!name){ flash('Ange en kontrollpunkt'); return; }
+    await addInspectionItem(st.id, phase, name);
+    st.inspDraft = st.inspDraft||{}; st.inspDraft[phase]='';
+    return render();
+  }
+
   if(a==='dictate-material'){
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if(!SR){ flash('Diktering stöds inte i den här webbläsaren – använd tangentbordets mikrofon'); return; }
@@ -1831,6 +2192,7 @@ $app.addEventListener('click', async e=>{
     customers = await dbAll('customers');
     jobs = await dbAll('jobs');
     checklist = await dbAll('checklist');
+    inspection = await dbAll('inspection');
     await seedDemoIfEmpty();
   }catch(err){ console.error('Kunde inte öppna lagring', err); }
   render();
