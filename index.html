@@ -135,6 +135,8 @@ svg.i{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stro
 /* ---- job detail ---- */
 .job-body{padding:16px 16px 100px}
 .section{margin-top:28px}
+.section-cards{display:flex;flex-direction:column;gap:12px;margin-top:24px}
+.section-cards .row-tile{min-height:64px}
 .section-title{font-size:18px;font-weight:600;margin-bottom:12px}
 .subsection-title{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px}
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
@@ -243,6 +245,7 @@ const ICON = {
   battery:'<svg class="i" viewBox="0 0 24 24"><rect x="2" y="8" width="16" height="8" rx="2"/><path d="M18 10.5h2a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1h-2"/><path d="M9 10l-2 3h3l-2 3"/></svg>',
   bulb:'<svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.5.4.8 1 .8 1.6V16h5.4v-.5c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z"/></svg>',
   chevronLeft:'<svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  chevronRight:'<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px;flex:0 0 auto;color:var(--muted)"><path d="M9 5l7 7-7 7"/></svg>',
   x:'<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   mic:'<svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
   menu:'<svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
@@ -264,7 +267,7 @@ const ICON = {
   minus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   plusSmall:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   sparkle:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4 10-10"/></svg>',
+  check:'<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4 10-10"/></svg>',
   home:'<svg class="i" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-6h4v6"/></svg>',
   folder:'<svg class="i" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6z"/></svg>'
 };
@@ -335,10 +338,20 @@ async function createJob(input){
   const now=new Date().toISOString();
   const j={ id:uid(), customerId:input.customerId, kind:input.kind, title:input.title, workType:input.workType,
     description:input.description||null, plannedAt:input.plannedAt||null, priority:input.priority,
-    isQuote:!!input.isQuote, status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now };
+    isQuote:!!input.isQuote, status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now,
+    siteUsesCustomerAddress: input.siteUsesCustomerAddress!==false,
+    siteAddress: input.siteAddress||null, sitePostalCode: input.sitePostalCode||null, siteCity: input.siteCity||null,
+    changes:'', notes:'' };
   await dbPut('jobs',j); jobs.push(j); return j;
 }
 function jobById(id){ return jobs.find(j=>j.id===id); }
+function jobSiteAddressText(job){
+  if(job.siteUsesCustomerAddress===false){
+    return [job.siteAddress, job.sitePostalCode, job.siteCity].filter(Boolean).join(', ');
+  }
+  const c = customerOf(job);
+  return c ? (c.address||'') : '';
+}
 
 /* ---- foton ---- */
 async function addPhoto(jobId, file, comment){
@@ -577,6 +590,7 @@ function closeTopLayer(){
     if(st.step===0){ st={view:'home'}; return; }
     st.step -= 1; return;
   }
+  if(st.view==='job' && st.jobTab && st.jobTab!=='oversikt'){ st.jobTab='oversikt'; return; }
   if(st.view==='job'){ st={view:'home'}; return; }
   if(st.view==='projects'){ st={view:'home'}; return; }
 }
@@ -586,6 +600,7 @@ function emptyDraft(){
   return { kind:null, method:null, existingCustomerId:null,
     newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true,
       isCompany:false,orgNumber:'',invoiceAddress:'',invoicePostalCode:'',invoiceCity:'',invoiceReference:'',glnNumber:''},
+    worksite:{useCustomerAddress:true, address:'', postalCode:'', city:''},
     title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal', isQuote:false,
     checklist:[] };
 }
@@ -852,7 +867,7 @@ function vStepCustomer(){
       <button class="switch ${draft.newCustomer.saveAsContact?'on':''}" data-act="toggle-save-contact"><div class="knob"></div></button>
     </div>`;
 
-  return `${vWizHeader('Kunduppgifter', false, 0, 3)}<div class="wiz-body">${body}</div>`;
+  return `${vWizHeader('Kunduppgifter', false, 0, 4)}<div class="wiz-body">${body}</div>`;
 }
 function vSearchResults(results){
   if(!results.length) return '';
@@ -861,6 +876,37 @@ function vSearchResults(results){
 function customerMissing(){
   if(draft.existingCustomerId) return [];
   const m=[]; if(!draft.newCustomer.name.trim()) m.push('Namn'); if(!draft.newCustomer.address.trim()) m.push('Adress'); return m;
+}
+
+/* ================= Render: step arbetsplats (NY) ================= */
+function vStepWorksite(){
+  const useCustomer = draft.worksite.useCustomerAddress;
+  const custAddr = draftCustomerAddress();
+  return `
+  ${vWizHeader('Arbetsplats', false, 1, 4)}
+  <div class="wiz-body">
+    <div class="card switch-row" style="margin-bottom:16px">
+      <div>
+        <div>Samma adress som kund</div>
+        ${custAddr?`<div class="muted" style="font-size:12px;margin-top:2px">${esc(custAddr)}</div>`:'<div class="muted" style="font-size:12px;margin-top:2px">Ingen kundadress angiven</div>'}
+      </div>
+      <button class="switch ${useCustomer?'on':''}" data-act="toggle-use-customer-address"><div class="knob"></div></button>
+    </div>
+    ${useCustomer?'':`
+    <div class="field"><span class="label">Adress *</span><input type="text" placeholder="Gatuadress" value="${esc(draft.worksite.address)}" data-field="ws.address"></div>
+    <div class="field field-row">
+      <div><span class="label">Postnummer</span><input type="text" placeholder="123 45" value="${esc(draft.worksite.postalCode)}" data-field="ws.postalCode"></div>
+      <div><span class="label">Ort</span><input type="text" placeholder="Ort" value="${esc(draft.worksite.city)}" data-field="ws.city"></div>
+    </div>`}
+  </div>`;
+}
+function worksiteMissing(){
+  if(draft.worksite.useCustomerAddress) return [];
+  const m=[]; if(!draft.worksite.address.trim()) m.push('Adress'); return m;
+}
+function draftSiteAddressText(){
+  return draft.worksite.useCustomerAddress ? draftCustomerAddress()
+    : [draft.worksite.address, draft.worksite.postalCode, draft.worksite.city].filter(Boolean).join(', ');
 }
 
 /* ================= Render: step details (skärm 4) ================= */
@@ -873,7 +919,7 @@ function vStepDetails(){
     <button class="tile ${draft.priority===p.v?'on':''}" data-act="set-priority" data-v="${p.v}"><span>${esc(p.l)}</span></button>`).join('');
 
   return `
-  ${vWizHeader('Arbetsinfo', false, 1, 3)}
+  ${vWizHeader('Arbetsinfo', false, 2, 4)}
   <div class="wiz-body">
     <div class="field"><span class="label">Namn på uppdrag *</span><input type="text" placeholder="T.ex. Felsökning elcentral" value="${esc(draft.title)}" data-field="title"></div>
     <div class="card switch-row" style="margin-bottom:16px">
@@ -954,10 +1000,11 @@ function vStepSummary(){
     </div>`;
 
   return `
-  ${vWizHeader('Sammanfattning', false, 2, 3)}
+  ${vWizHeader('Sammanfattning', false, 3, 4)}
   <div class="wiz-body">
     ${section('Kunduppgifter', custRows, 1)}
-    ${section('Arbetsinfo', jobRows, 2)}
+    ${section('Arbetsplats', [['Adress', draftSiteAddressText()]], 2)}
+    ${section('Arbetsinfo', jobRows, 3)}
     <div class="card" style="margin-bottom:16px">
       <div class="summary-row"><span class="muted">Prioritet</span><span class="v row gap-xs" style="justify-content:flex-end"><span class="dot" style="background:${PRIORITY_COLOR[draft.priority]}"></span>${PRIORITY_LABEL[draft.priority]}</span></div>
     </div>
@@ -973,10 +1020,14 @@ function vWizFooter(){
     return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Nästa</button></div>`;
   }
   if(st.step===2){
-    const m=detailsMissing();
+    const m=worksiteMissing();
     return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Nästa</button></div>`;
   }
   if(st.step===3){
+    const m=detailsMissing();
+    return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Nästa</button></div>`;
+  }
+  if(st.step===4){
     return `<div class="wiz-footer"><button class="primary-btn" data-act="wiz-submit">Skapa uppdrag</button></div>`;
   }
   return '';
@@ -1016,21 +1067,18 @@ function vChecklistSection(job){
   }).join('');
 
   return `
-  <div class="section">
-    <div class="section-title">Arbete</div>
-    <div class="subsection-title">Att göra</div>
-    ${prog ? `
-    <div class="job-progress">
-      <div class="row between" style="font-size:13px"><span class="muted">${prog.done} av ${prog.target} klara</span><span class="bold">${prog.percent}%</span></div>
-      <div class="progress-track"><div class="progress-fill" style="width:${prog.percent}%"></div></div>
-    </div>
-    <div class="card" style="margin-top:12px;padding:4px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">Inga moment ännu.</p>`}
-    <div class="add-form" style="margin-top:12px">
-      <input type="text" placeholder="Namn på moment, t.ex. Uttag" value="${esc(st.clDraft?.name||'')}" data-field="cl-name" autocomplete="off">
-      <div class="row2" style="grid-template-columns:1fr auto">
-        <input type="number" inputmode="numeric" min="1" placeholder="Antal" value="${esc(st.clDraft?.qty||'')}" data-field="cl-qty">
-        <button class="primary-btn" style="padding:0 20px" data-act="add-checklist-item" data-id="${job.id}">${ICON.plusSmall}<span>Lägg till</span></button>
-      </div>
+  <div class="subsection-title">Att göra</div>
+  ${prog ? `
+  <div class="job-progress">
+    <div class="row between" style="font-size:13px"><span class="muted">${prog.done} av ${prog.target} klara</span><span class="bold">${prog.percent}%</span></div>
+    <div class="progress-track"><div class="progress-fill" style="width:${prog.percent}%"></div></div>
+  </div>
+  <div class="card" style="margin-top:12px;padding:4px 16px">${rows}</div>` : `<p class="empty" style="padding-left:0">Inga moment ännu.</p>`}
+  <div class="add-form" style="margin-top:12px">
+    <input type="text" placeholder="Namn på moment, t.ex. Uttag" value="${esc(st.clDraft?.name||'')}" data-field="cl-name" autocomplete="off">
+    <div class="row2" style="grid-template-columns:1fr auto">
+      <input type="number" inputmode="numeric" min="1" placeholder="Antal" value="${esc(st.clDraft?.qty||'')}" data-field="cl-qty">
+      <button class="primary-btn" style="padding:0 20px" data-act="add-checklist-item" data-id="${job.id}">${ICON.plusSmall}<span>Lägg till</span></button>
     </div>
   </div>`;
 }
@@ -1038,16 +1086,120 @@ function vChecklistSection(job){
 function vJobDetail(id){
   const job = jobById(id);
   if(!job) return `${vWizHeader('Uppdrag', true)}<div class="wiz-body"><p class="muted">Uppdraget hittades inte.</p></div>`;
+  const tab = st.jobTab || 'oversikt';
+  if(tab==='arbete') return vJobArbete(job);
+  if(tab==='material') return vJobMaterial(job);
+  if(tab==='dokumentation') return vJobDokumentation(job);
+  if(tab==='kontroll') return vJobKontroll(job);
+  if(tab==='ekonomi') return vJobEkonomi(job);
+  return vJobOversikt(job);
+}
+
+/* ---- Uppdrag: Översikt ---- */
+function vJobOversikt(job){
   const c = customerOf(job);
   const s = statusLabel(job.status);
+  const prog = checklistProgress(job.id);
   const t = materialTotals(job);
+  const siteAddr = jobSiteAddressText(job);
 
+  const sectionCard = (tab, icon, title, sub) => `
+    <button class="tile row-tile" data-act="open-job-tab" data-tab="${tab}">
+      ${icon}<span class="t-text">${esc(title)}<span class="t-sub" style="display:block">${esc(sub)}</span></span>
+      ${ICON.chevronRight}
+    </button>`;
+
+  return `
+  ${vWizHeader(job.title, false, undefined, undefined, 'job-back')}
+  <div class="job-body">
+    <div class="card">
+      <div class="row between" style="margin-bottom:10px">
+        <div class="row gap-xs">
+          ${job.isQuote?'<span class="pill quote">Offert</span>':''}
+          <span class="pill ${s.on?'on':''}">${s.l}</span>
+        </div>
+        <span class="row gap-xs"><span class="dot" style="background:${PRIORITY_COLOR[job.priority]}"></span>${PRIORITY_LABEL[job.priority]}</span>
+      </div>
+      <div class="bold" style="font-size:17px">${esc(c?c.name:'')}</div>
+      ${siteAddr ? `<div class="muted row gap-xs" style="margin-top:4px">${ICON.pin}<span>${esc(siteAddr)}</span></div>` : ''}
+      <div class="muted row gap-xs" style="margin-top:6px">${ICON.clock}<span>${esc(fmtDateTime(job.plannedAt))}</span></div>
+    </div>
+
+    <div class="section-cards">
+      ${sectionCard('arbete', ICON.wrench, 'Arbete', prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar')}
+      ${sectionCard('material', ICON.box, 'Material', jobMaterials.length ? `${jobMaterials.length} artiklar` : 'Inga artiklar ännu')}
+      ${sectionCard('dokumentation', ICON.camera, 'Dokumentation', jobPhotos.length ? `${jobPhotos.length} bilder` : 'Bilder, ritningar, dokument')}
+      ${sectionCard('kontroll', ICON.gauge, 'Kontroll', 'Egenkontroll — kommer snart')}
+      ${sectionCard('ekonomi', ICON.calc, 'Ekonomi', `Totalt ${fmtKr(t.total)}`)}
+    </div>
+  </div>`;
+}
+
+/* ---- Uppdrag: Arbete ---- */
+function vJobArbete(job){
+  return `
+  ${vWizHeader('Arbete', false, undefined, undefined, 'job-tab-back')}
+  <div class="job-body">
+    <div class="section">
+      <div class="subsection-title">Arbetsbeskrivning</div>
+      <textarea placeholder="Kort beskrivning av arbetet…" data-field="job-description">${esc(job.description||'')}</textarea>
+    </div>
+    <div class="section">
+      ${vChecklistSection(job)}
+    </div>
+    <div class="section">
+      <div class="subsection-title">Ändringar / tillägg</div>
+      <textarea placeholder="Nya kundönskemål eller ändringar mot ursprunglig plan…" data-field="job-changes">${esc(job.changes||'')}</textarea>
+    </div>
+    <div class="section">
+      <div class="subsection-title">Anteckningar</div>
+      <textarea placeholder="Fria anteckningar…" data-field="job-notes">${esc(job.notes||'')}</textarea>
+    </div>
+  </div>`;
+}
+
+/* ---- Uppdrag: Material ---- */
+function vJobMaterial(job){
+  const materialRows = jobMaterials.map(m=>{
+    const myPrice = (Number(m.qty)||0) * (Number(m.unitPrice)||0);
+    const markupAmt = myPrice * ((job.markupPercent||0)/100);
+    const customerPrice = myPrice + markupAmt;
+    return `
+    <div class="material-row" data-mid="${m.id}" data-myprice="${myPrice}">
+      <div class="material-info">
+        <div class="material-name">${esc(m.name)}</div>
+        <div class="material-sub">${[m.eNr?('E-nr '+esc(m.eNr)):'', esc(m.qty)+' '+esc(m.unit), m.description?esc(m.description):''].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div class="material-cols">
+        <div><div class="lbl">Mitt pris</div><div>${fmtKr(myPrice)}</div></div>
+        <div><div class="lbl">Påslag</div><div class="mat-markup-val">${fmtKr(markupAmt)}</div></div>
+        <div><div class="lbl">Kund</div><div class="bold mat-customer-val">${fmtKr(customerPrice)}</div></div>
+      </div>
+      <button class="material-del" data-act="delete-material" data-id="${m.id}">${ICON.trash}</button>
+    </div>`;
+  }).join('');
+
+  return `
+  ${vWizHeader('Material', false, undefined, undefined, 'job-tab-back')}
+  <div class="job-body">
+    <div class="section">
+      <div class="actions-row">
+        <button class="tile row-tile" data-act="open-mat-panel">${ICON.box}<span class="t-text">Registrera material<span class="t-sub" style="display:block">Sök, senaste eller favoriter</span></span></button>
+        <button class="tile row-tile off">${ICON.cart}<span class="t-text">Importera order<span class="t-sub" style="display:block">Ahlsell – kommer snart</span></span></button>
+      </div>
+      ${jobMaterials.length? `<div class="card" style="margin-top:16px;padding:4px 16px">${materialRows}</div>` : `<p class="empty" style="padding-left:0;margin-top:16px">Inga artiklar tillagda än.</p>`}
+    </div>
+  </div>
+  ${st.matPanel ? vMaterialPanel(job) : ''}`;
+}
+
+/* ---- Uppdrag: Dokumentation ---- */
+function vJobDokumentation(job){
   const photosHtml = `
     <div class="photo-grid">
       ${jobPhotos.map(p=>`
         <button class="photo-thumb" data-act="open-photo" data-id="${p.id}">
           <img src="${photoObjectUrls[p.id]}" alt="">
-          ${p.comment?'':''}
         </button>`).join('')}
       <label class="photo-add">
         ${ICON.camera}
@@ -1069,73 +1221,67 @@ function vJobDetail(id){
       </div>`;
     })() : ''}`;
 
-  const materialRows = jobMaterials.map(m=>{
-    const myPrice = (Number(m.qty)||0) * (Number(m.unitPrice)||0);
-    const markupAmt = myPrice * ((job.markupPercent||0)/100);
-    const customerPrice = myPrice + markupAmt;
-    return `
-    <div class="material-row" data-mid="${m.id}" data-myprice="${myPrice}">
-      <div class="material-info">
-        <div class="material-name">${esc(m.name)}</div>
-        <div class="material-sub">${[m.eNr?('E-nr '+esc(m.eNr)):'', esc(m.qty)+' '+esc(m.unit), m.description?esc(m.description):''].filter(Boolean).join(' · ')}</div>
-      </div>
-      <div class="material-cols">
-        <div><div class="lbl">Mitt pris</div><div>${fmtKr(myPrice)}</div></div>
-        <div><div class="lbl">Påslag</div><div class="mat-markup-val">${fmtKr(markupAmt)}</div></div>
-        <div><div class="lbl">Kund</div><div class="bold mat-customer-val">${fmtKr(customerPrice)}</div></div>
-      </div>
-      <button class="material-del" data-act="delete-material" data-id="${m.id}">${ICON.trash}</button>
-    </div>`;
-  }).join('');
-
   return `
-  ${vWizHeader(job.title, false, undefined, undefined, 'job-back')}
+  ${vWizHeader('Dokumentation', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
-    <div class="card">
-      <div class="row between" style="margin-bottom:10px">
-        <div class="row gap-xs">
-          ${job.isQuote?'<span class="pill quote">Offert</span>':''}
-          <span class="pill ${s.on?'on':''}">${s.l}</span>
-        </div>
-        <span class="row gap-xs"><span class="dot" style="background:${PRIORITY_COLOR[job.priority]}"></span>${PRIORITY_LABEL[job.priority]}</span>
-      </div>
-      <div class="bold" style="font-size:17px">${esc(c?c.name:'')}</div>
-      ${c && c.address ? `<div class="muted row gap-xs" style="margin-top:4px">${ICON.pin}<span>${esc(c.address)}</span></div>` : ''}
-      <div class="muted row gap-xs" style="margin-top:6px">${ICON.clock}<span>${esc(fmtDateTime(job.plannedAt))}</span></div>
-    </div>
-
-    ${vChecklistSection(job)}
-
     <div class="section">
-      <div class="section-title">Foton</div>
+      <div class="subsection-title">Bilder</div>
       ${photosHtml}
     </div>
-
     <div class="section">
-      <div class="section-title">Materiallista</div>
       <div class="actions-row">
-        <button class="tile row-tile" data-act="open-mat-panel">${ICON.box}<span class="t-text">Registrera material<span class="t-sub" style="display:block">Sök, senaste eller favoriter</span></span></button>
-        <button class="tile row-tile off">${ICON.cart}<span class="t-text">Importera order<span class="t-sub" style="display:block">Ahlsell – kommer snart</span></span></button>
+        <button class="tile row-tile off">${ICON.folder}<span class="t-text">Ritningar<span class="t-sub" style="display:block">Kommer snart</span></span></button>
       </div>
-      ${jobMaterials.length? `<div class="card" style="margin-top:16px;padding:4px 16px">${materialRows}</div>` : `<p class="empty" style="padding-left:0;margin-top:16px">Inga artiklar tillagda än.</p>`}
-      <div class="summary-card">
-        <div class="row between"><span class="muted">Materialkostnad</span><span>${fmtKr(t.cost)}</span></div>
+      <div class="actions-row" style="margin-top:12px">
+        <button class="tile row-tile off">${ICON.save}<span class="t-text">Dokument<span class="t-sub" style="display:block">Kommer snart</span></span></button>
+      </div>
+      <div class="actions-row" style="margin-top:12px">
+        <button class="tile row-tile off">${ICON.calc}<span class="t-text">Mätvärden<span class="t-sub" style="display:block">Kommer snart</span></span></button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---- Uppdrag: Kontroll (struktur klar, innehåll i nästa steg) ---- */
+function vJobKontroll(job){
+  const categories = ['Före arbete','Under arbete','Före drifttagning','Slutkontroll'];
+  return `
+  ${vWizHeader('Kontroll', false, undefined, undefined, 'job-tab-back')}
+  <div class="job-body">
+    <p class="muted">Egenkontrollen byggs i nästa steg. Här kommer du kunna bocka av kontrollpunkter i fyra faser:</p>
+    <div class="card" style="margin-top:12px;padding:4px 16px">
+      ${categories.map(cat=>`
+        <div class="checklist-row">
+          <div class="checklist-info"><div class="checklist-name">${esc(cat)}</div></div>
+          <span class="pill">Kommer snart</span>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+/* ---- Uppdrag: Ekonomi ---- */
+function vJobEkonomi(job){
+  const t = materialTotals(job);
+  return `
+  ${vWizHeader('Ekonomi', false, undefined, undefined, 'job-tab-back')}
+  <div class="job-body">
+    <div class="section">
+      <div class="summary-card" style="margin-top:0">
+        <div class="row between"><span class="muted">Arbetstid</span><span class="muted">Kommer med Arbetsläge</span></div>
+        <div class="row between" style="margin-top:6px"><span class="muted">Materialkostnad</span><span>${fmtKr(t.cost)}</span></div>
         <div class="row between" style="margin-top:6px">
           <span class="muted">Påslag</span>
           <span class="row gap-xs"><input type="number" inputmode="decimal" value="${job.markupPercent}" data-field="markup" style="width:56px;padding:4px 8px;min-height:0;text-align:right">%</span>
         </div>
+        <div class="row between" style="margin-top:6px"><span class="muted">Övrigt / tillägg</span><span class="muted">Kommer snart</span></div>
         <div class="summary-total"><span>Totalt</span><span>${fmtKr(t.total)}</span></div>
         <div class="row between" style="margin-top:10px">
           <span class="accent bold">Du tjänar</span>
           <span class="accent bold" style="font-size:18px">${fmtKr(t.markupSum)}</span>
         </div>
       </div>
-      <div style="margin-top:16px">
-        <button class="primary-btn" data-act="save-materialplan">${ICON.save}<span>Spara materialplan</span></button>
-      </div>
     </div>
-  </div>
-  ${st.matPanel ? vMaterialPanel(job) : ''}`;
+  </div>`;
 }
 
 /* ================= Registrera material (panel) ================= */
@@ -1364,7 +1510,7 @@ function render(){
   if(st.view==='home'){ $app.innerHTML = vHome() + (calendarOpen?vCalendarPanel():'') + (settingsOpen?vSettingsPanel():''); afterHome(); return; }
   if(st.view==='projects'){ $app.innerHTML = vProjects() + (settingsOpen?vSettingsPanel():''); return; }
   if(st.view==='wizard'){
-    const stepView = [vStepKind, vStepCustomer, vStepDetails, vStepSummary][st.step]();
+    const stepView = [vStepKind, vStepCustomer, vStepWorksite, vStepDetails, vStepSummary][st.step]();
     $app.innerHTML = stepView + vWizFooter() + (settingsOpen?vSettingsPanel():'');
     return;
   }
@@ -1383,6 +1529,7 @@ $app.addEventListener('input', e=>{
     return;
   }
   if(f.startsWith('nc.')){ draft.newCustomer[f.slice(3)]=t.value; if(f==='nc.name'||f==='nc.address') patchWizFooter(); return; }
+  if(f.startsWith('ws.')){ draft.worksite[f.slice(3)]=t.value; if(f==='ws.address') patchWizFooter(); return; }
   if(f==='title'){ draft.title=t.value; patchWizFooter(); return; }
   if(f==='description'){ draft.description=t.value; return; }
   if(f==='plannedDate'){ draft.plannedDate=t.value; return; }
@@ -1407,6 +1554,12 @@ $app.addEventListener('input', e=>{
   if(f==='mat-search'){
     st.matSearch = t.value;
     const box=document.getElementById('matPanelList'); if(box) box.innerHTML=vMatPanelList();
+    return;
+  }
+  if(f==='job-description'||f==='job-changes'||f==='job-notes'){
+    const job=jobById(st.id); if(!job) return;
+    const key = f==='job-description'?'description':f==='job-changes'?'changes':'notes';
+    job[key]=t.value; dbPut('jobs', job);
     return;
   }
   if(f==='markup'){
@@ -1455,7 +1608,7 @@ $app.addEventListener('change', async e=>{
 function patchWizFooter(){
   const footer = $app.querySelector('.wiz-footer'); if(!footer) return;
   const btn = footer.querySelector('.primary-btn');
-  const missing = st.step===1 ? customerMissing() : st.step===2 ? detailsMissing() : [];
+  const missing = st.step===1 ? customerMissing() : st.step===2 ? worksiteMissing() : st.step===3 ? detailsMissing() : [];
   let hint = footer.querySelector('.missing');
   if(missing.length){
     if(!hint){ hint = document.createElement('span'); hint.className='missing'; footer.insertBefore(hint, btn); }
@@ -1480,6 +1633,8 @@ $app.addEventListener('click', async e=>{
     st={view:'job', id}; pushNav(); return render();
   }
   if(a==='job-back'){ history.back(); return; }
+  if(a==='open-job-tab'){ st.jobTab=b.dataset.tab; pushNav(); return render(); }
+  if(a==='job-tab-back'){ history.back(); return; }
 
   if(a==='wiz-back'){ history.back(); return; }
   if(a==='wiz-goto'){ st.step = +b.dataset.step; pushNav(); return render(); }
@@ -1499,6 +1654,7 @@ $app.addEventListener('click', async e=>{
   if(a==='set-worktype'){ draft.workType=b.dataset.v; return render(); }
   if(a==='set-priority'){ draft.priority=b.dataset.v; return render(); }
   if(a==='toggle-quote'){ draft.isQuote=!draft.isQuote; return render(); }
+  if(a==='toggle-use-customer-address'){ draft.worksite.useCustomerAddress=!draft.worksite.useCustomerAddress; return render(); }
   if(a==='add-draft-checklist-item'){
     const d = st.clDraft||{};
     if(!d.name || !String(d.name).trim()){ flash('Ange ett namn på momentet'); return; }
@@ -1527,7 +1683,11 @@ $app.addEventListener('click', async e=>{
     const job = await createJob({
       customerId, kind: draft.kind||'customer_job', title: draft.title.trim(), workType: draft.workType,
       description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority,
-      isQuote: draft.isQuote
+      isQuote: draft.isQuote,
+      siteUsesCustomerAddress: draft.worksite.useCustomerAddress,
+      siteAddress: draft.worksite.address.trim()||null,
+      sitePostalCode: draft.worksite.postalCode.trim()||null,
+      siteCity: draft.worksite.city.trim()||null
     });
     for(const it of draft.checklist) await addChecklistItem(job.id, it);
     flash('Uppdrag skapat');
