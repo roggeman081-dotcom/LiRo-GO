@@ -2,8 +2,8 @@
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v45';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js'];
+const CACHE = 'lirogo-v46';
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -21,9 +21,10 @@ function injectHomeOverlay(res){
   if(!res) return res;
   return res.clone().text().then(text => {
     if(!text.includes('home-v44.js')){
-      text = text.replace('</body>', '<script src="./home-v44.js"></script>\n<script src="./home-v44-safe.js"></script>\n</body>');
-    } else if(!text.includes('home-v44-safe.js')){
-      text = text.replace('</body>', '<script src="./home-v44-safe.js"></script>\n</body>');
+      text = text.replace('</body>', '<script src="./home-v44.js"></script>\n<script src="./home-v44-safe.js"></script>\n<script src="./theme-v46.js"></script>\n</body>');
+    } else {
+      if(!text.includes('home-v44-safe.js')) text = text.replace('</body>', '<script src="./home-v44-safe.js"></script>\n</body>');
+      if(!text.includes('theme-v46.js')) text = text.replace('</body>', '<script src="./theme-v46.js"></script>\n</body>');
     }
     return new Response(text, {
       status: res.status,
