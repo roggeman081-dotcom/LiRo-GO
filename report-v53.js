@@ -1,6 +1,6 @@
 /* LiRo GO v53 – tydlig rapportknapp och standardmottagare. */
 (function(){
-  const DEFAULT_REPORT_EMAIL='roger@liroemteknik.se';
+  const DEFAULT_REPORT_EMAIL='roger@liroelteknik.se';
 
   getReportEmail=function(){
     const saved=String(localStorage.getItem('lirogo_report_email')||'').trim();
