@@ -778,6 +778,93 @@ async function fetchAiJobSummary(job){
   return textBlock ? textBlock.text.trim() : '';
 }
 
+/* ---- "Berätta jobbet" — AI tolkar en fri arbetsanteckning till ett förslag som användaren godkänner ---- */
+async function fetchAiWorkCapture(job, text){
+  const key=getAiKey();
+  if(!key) throw new Error('no-key');
+  const system=[
+    'Du hjälper en svensk elektriker att strukturera en muntlig eller skriven arbetsanteckning.',
+    'Du får INTE hitta på uppgifter. Om något saknas ska fältet vara null, tom sträng eller tom array.',
+    'Tolka endast sådant användaren faktiskt säger.',
+    'Svara ENDAST med giltig JSON, utan markdown eller förklaring.',
+    'Format:',
+    '{"hours":number|null,"workDone":"string","changes":"string","followUp":"string","materials":[{"name":"string","qty":number|null,"unit":"string"}]}',
+    'hours = arbetad tid som uttryckligen nämns. workDone = kort saklig dagbokstext.',
+    'changes = nya kundönskemål/tillägg jämfört med beställningen.',
+    'followUp = EN konkret sak att följa upp senare, annars tom sträng.',
+    'materials = material som uttryckligen nämns, inga gissningar.'
+  ].join(' ');
+  const context=[
+    'Uppdrag: '+job.title,
+    job.description?'Beställt arbete: '+job.description:'',
+    job.changes?'Befintliga tillägg/ändringar: '+job.changes:'',
+    'Arbetsanteckning: '+text
+  ].filter(Boolean).join('\n');
+  const res=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:anthropicHeaders(key),
+    body:JSON.stringify({model:getAiModel(),max_tokens:700,system,messages:[{role:'user',content:context}]})
+  });
+  if(!res.ok){
+    let msg='API-fel ('+res.status+')';
+    if(res.status===401) msg='Ogiltig API-nyckel';
+    else if(res.status===429) msg='För många förfrågningar, försök igen om en stund';
+    throw new Error(msg);
+  }
+  const data=await res.json();
+  const block=(data.content||[]).find(b=>b.type==='text');
+  const raw=block?block.text.trim():'';
+  const match=raw.match(/\{[\s\S]*\}/);
+  if(!match) throw new Error('LiRo kunde inte tolka anteckningen');
+  let parsed;
+  try{ parsed=JSON.parse(match[0]); }catch{ throw new Error('LiRo gav ett ogiltigt svar'); }
+  const materials=Array.isArray(parsed.materials)?parsed.materials
+    .filter(m=>m&&String(m.name||'').trim())
+    .slice(0,20)
+    .map(m=>({name:String(m.name).trim(),qty:m.qty===null||m.qty===undefined?null:Math.max(0,toNumber(m.qty,0)),unit:String(m.unit||'st').trim()||'st'})):[];
+  return {
+    hours:parsed.hours===null||parsed.hours===undefined?null:Math.max(0,toNumber(parsed.hours,0)),
+    workDone:String(parsed.workDone||'').trim(),
+    changes:String(parsed.changes||'').trim(),
+    followUp:String(parsed.followUp||'').trim(),
+    materials
+  };
+}
+
+function appendJobText(existing, text, prefix){
+  const clean=String(text||'').trim();
+  if(!clean) return existing||'';
+  const value=prefix?prefix+clean:clean;
+  return existing&&String(existing).trim()?String(existing).trim()+'\n\n'+value:value;
+}
+
+async function applyAiWorkCapture(job, capture, options){
+  const o=options||{};
+  const now=new Date();
+  const stamp=now.toLocaleString('sv-SE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  if(o.hours && capture.hours>0) job.loggedHours=Math.max(0,toNumber(job.loggedHours,0))+capture.hours;
+  if(o.workDone && capture.workDone) job.notes=appendJobText(job.notes,capture.workDone,'['+stamp+'] ');
+  if(o.changes && capture.changes) job.changes=appendJobText(job.changes,capture.changes,'');
+  if(o.materials && capture.materials.length){
+    const existing=Array.isArray(job.materialMentions)?job.materialMentions:[];
+    const keys=new Set(existing.map(x=>String(x.name||'').toLowerCase()));
+    for(const m of capture.materials){
+      const k=m.name.toLowerCase();
+      if(!keys.has(k)){ existing.push({...m,createdAt:now.toISOString()}); keys.add(k); }
+    }
+    job.materialMentions=existing.slice(-50);
+  }
+  if(o.followUp && capture.followUp){
+    const customer=customerOf(job);
+    await addRadarItem(capture.followUp,'ai-work-capture',{
+      customerId:customer?.id||job.customerId||null,jobId:job.id,category:'followup',reason:'Föreslaget från arbetsanteckning'
+    });
+  }
+  if(job.status!=='done'&&job.status!=='invoiced') job.status='active';
+  job.updatedAt=now.toISOString();
+  await dbPut('jobs',job);
+}
+
 /* ---- "Fråga LiRo AI" i arbetsläget — snabba praktiska svar med jobbet som kontext ---- */
 async function fetchAiJobAnswer(job, question){
   const key = getAiKey();
@@ -973,9 +1060,16 @@ function inspectionProgress(jobId){
 
 /* ---- På radarn (personlig snabblista: att göra / uppföljning / idéer) ---- */
 let radar = [];
-async function addRadarItem(text, source){
-  const it = { id:uid(), text, status:'active', laterUntil:null, source:source||'manual', createdAt:new Date().toISOString(), doneAt:null };
-  await dbPut('radar', it); radar.push(it); return it;
+async function addRadarItem(text, source, options){
+  const o=options||{};
+  const it={
+    id:uid(), text:String(text||'').trim(), status:'active', laterUntil:null,
+    source:source||'manual', customerId:o.customerId||null, jobId:o.jobId||null,
+    category:o.category||'general', reason:o.reason||null,
+    createdAt:new Date().toISOString(), doneAt:null
+  };
+  if(!it.text) return null;
+  await dbPut('radar',it); radar.push(it); return it;
 }
 async function completeRadarItem(id){
   const it = radar.find(r=>r.id===id); if(!it) return;
@@ -1083,6 +1177,7 @@ async function closeTopLayer(){
   if(settingsOpen){ settingsOpen=false; return; }
   if(calendarOpen){ calendarOpen=false; return; }
   if(st.workNoteOpen){ st.workNoteOpen=false; return; }
+  if(st.workCaptureOpen){ st.workCaptureOpen=false; st.workCaptureResult=null; st.workCaptureError=null; return; }
   if(st.workAiOpen){ st.workAiOpen=false; return; }
   if(st.scannerOpen){
     st.scannerOpen=false;
@@ -1808,6 +1903,7 @@ function vJobMaterial(job){
     </div>`;
   }).join('');
 
+  const mentions=Array.isArray(job.materialMentions)?job.materialMentions:[];
   const plannedRowsHtml = plannedRows.map(m=>`
     <div class="material-row" data-mid="${m.id}">
       <div class="material-info">
@@ -1821,6 +1917,8 @@ function vJobMaterial(job){
   return `
   ${vWizHeader('Material', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
+    ${mentions.length?`<div class="section"><div class="subsection-title">Material som LiRo hörde</div><div class="card" style="padding:6px 16px">${mentions.map((m,i)=>`<div class="checklist-row"><div class="checklist-info"><div class="checklist-name">${esc(m.name)}</div><div class="checklist-sub">${m.qty?esc(m.qty+' '+m.unit):'Kontrollera antal och artikel'}</div></div><button class="accent" style="font-size:12px;font-weight:600" data-act="search-material-mention" data-index="${i}">Sök</button><button class="checklist-del" data-act="dismiss-material-mention" data-index="${i}">${ICON.x}</button></div>`).join('')}</div><p class="settings-note">Förslagen påverkar inte ekonomi eller faktura förrän du registrerar rätt artikel.</p></div>`:''}
+
     <div class="mat-tabs">
       <button class="mat-tab ${tab==='planerat'?'on':''}" data-act="set-material-tab" data-tab="planerat">Planerat</button>
       <button class="mat-tab ${tab!=='planerat'?'on':''}" data-act="set-material-tab" data-tab="anvant">Använt</button>
@@ -2116,12 +2214,14 @@ function vArbetslage(job){
         <input type="file" accept="image/*" capture="environment" data-photo-input="1">
       </label>
       <button class="work-btn" data-act="work-note">${ICON.save}<span>Anteckning</span></button>
+      <button class="work-btn" data-act="work-capture">${ICON.mic}<span>Berätta jobbet</span></button>
       <button class="work-btn" data-act="work-goto-kontroll">${ICON.gauge}<span>Kontroll</span></button>
-      <button class="work-btn" data-act="work-ai">${ICON.sparkle}<span>Fråga LiRo AI</span></button>
+      <button class="work-btn" data-act="work-ai">${ICON.sparkle}<span>Fråga LiRo</span></button>
     </div>
   </div>
   ${st.matPanel ? vMaterialPanel(job) : ''}
   ${st.workNoteOpen ? vWorkNotePanel() : ''}
+  ${st.workCaptureOpen ? vWorkCapturePanel(job) : ''}
   ${st.workAiOpen ? vWorkAiPanel(job) : ''}`;
 }
 function vWorkNotePanel(){
@@ -2143,7 +2243,7 @@ function vWorkAiPanel(job){
     <div class="mat-panel-head">
       <div class="mat-panel-title">
         <button class="iconbtn" data-act="work-ai-close" aria-label="Stäng">${ICON.x}</button>
-        <h1>Fråga LiRo AI</h1>
+        <h1>Fråga LiRo</h1>
         <div style="width:44px"></div>
       </div>
       <div class="mat-panel-sub">${esc(job.title)}</div>
@@ -2169,6 +2269,68 @@ function vWorkAiResult(){
   if(st.workAiAnswer) return `<div class="card" style="margin-top:16px;white-space:pre-wrap">${esc(st.workAiAnswer)}</div>`;
   return '';
 }
+function vWorkCapturePanel(job){
+  const result=st.workCaptureResult;
+  return `
+  <div class="mat-panel">
+    <div class="mat-panel-head">
+      <div class="mat-panel-title">
+        <button class="iconbtn" data-act="work-capture-close" aria-label="Stäng">${ICON.x}</button>
+        <h1>Berätta jobbet</h1>
+        <div style="width:44px"></div>
+      </div>
+      <div class="mat-panel-sub">${esc(job.title)}</div>
+    </div>
+    <div class="mat-panel-list">
+      <div class="ai-suggest-box">
+        <span class="label">Vad har du gjort?</span>
+        <div class="field-mic">
+          <textarea placeholder="T.ex. Tre och en halv timme. Bytte två uttag och drog tio meter kabel. Kunden vill att vi tittar på garagebelysningen nästa gång." data-field="work-capture-text" autocomplete="off">${esc(st.workCaptureText||'')}</textarea>
+          ${DICTATION_SUPPORTED?`<button class="iconbtn mic-inline ${st.dictatingKey==='workcapture'?'mic-listening':''}" data-act="dictate-work-capture" aria-label="Diktera" style="top:24px;transform:none">${ICON.mic}</button>`:''}
+        </div>
+        <button class="primary-btn" style="margin-top:12px" data-act="analyze-work-capture" ${st.workCaptureLoading?'disabled':''}>
+          ${ICON.sparkle}<span>${st.workCaptureLoading?'Tolkar…':'Låt LiRo sortera'}</span>
+        </button>
+      </div>
+
+      ${st.workCaptureError?`<p class="muted" style="margin-top:12px">${esc(st.workCaptureError)}</p>`:''}
+
+      ${result?`
+        <div class="subsection-title" style="margin-top:20px">Förslag – du bestämmer vad som sparas</div>
+        <div class="card" style="padding:6px 16px">
+          ${result.hours>0?`
+          <label class="checklist-row" style="cursor:pointer">
+            <input type="checkbox" data-capture-part="hours" checked>
+            <div class="checklist-info"><div class="checklist-name">Arbetstid</div><div class="checklist-sub">Lägg till ${fmtHours(result.hours)}</div></div>
+          </label>`:''}
+          ${result.workDone?`
+          <label class="checklist-row" style="cursor:pointer">
+            <input type="checkbox" data-capture-part="workDone" checked>
+            <div class="checklist-info"><div class="checklist-name">Dagbok</div><div class="checklist-sub">${esc(result.workDone)}</div></div>
+          </label>`:''}
+          ${result.changes?`
+          <label class="checklist-row" style="cursor:pointer">
+            <input type="checkbox" data-capture-part="changes" checked>
+            <div class="checklist-info"><div class="checklist-name">Tillägg & ändringar</div><div class="checklist-sub">${esc(result.changes)}</div></div>
+          </label>`:''}
+          ${result.followUp?`
+          <label class="checklist-row" style="cursor:pointer">
+            <input type="checkbox" data-capture-part="followUp" checked>
+            <div class="checklist-info"><div class="checklist-name">På radarn</div><div class="checklist-sub">${esc(result.followUp)}</div></div>
+          </label>`:''}
+          ${result.materials.length?`
+          <label class="checklist-row" style="cursor:pointer">
+            <input type="checkbox" data-capture-part="materials" checked>
+            <div class="checklist-info"><div class="checklist-name">Material att kontrollera</div><div class="checklist-sub">${result.materials.map(m=>esc((m.qty?m.qty+' '+m.unit+' ':'')+m.name)).join(' · ')}</div></div>
+          </label>`:''}
+        </div>
+        ${result.materials.length?`<p class="settings-note">Materialet läggs inte automatiskt på fakturan. LiRo sparar det som material att kontrollera, så att pris och artikel blir rätt innan du registrerar det.</p>`:''}
+        <button class="primary-btn" style="width:100%;margin-top:14px" data-act="save-work-capture">${ICON.check}<span>Spara valda delar</span></button>
+      `:''}
+    </div>
+  </div>`;
+}
+
 /* ================= Registrera material (panel) ================= */
 function vMatQtyRow(row, kind){
   kind = kind||'used';
@@ -2738,6 +2900,7 @@ $app.addEventListener('input', e=>{
     return;
   }
   if(f==='work-note-text'){ st.workNoteText=t.value; return; }
+  if(f==='work-capture-text'){ st.workCaptureText=t.value; return; }
   if(f==='markup'){
     const job=jobById(st.id); if(!job) return;
     const percent = Number(t.value)||0;
@@ -2929,6 +3092,32 @@ $app.addEventListener('click', async e=>{
     return render();
   }
   if(a==='work-note'){ st.workNoteOpen=true; st.workNoteText=''; return render(); }
+  if(a==='work-capture'){
+    if(!getAiKey()){ settingsOpen=true; pushNav(); flash('Lägg till en API-nyckel för LiRo först'); return render(); }
+    st.workCaptureOpen=true; st.workCaptureText=''; st.workCaptureResult=null; st.workCaptureError=null; pushNav(); return render();
+  }
+  if(a==='work-capture-close'){ history.back(); return; }
+  if(a==='dictate-work-capture'){
+    toggleDictate('workcapture',text=>{ st.workCaptureText=text; render(); });
+    return;
+  }
+  if(a==='analyze-work-capture'){
+    const text=(st.workCaptureText||'').trim();
+    if(!text){ flash('Berätta först vad du gjort'); return; }
+    const job=jobById(st.id); if(!job) return;
+    st.workCaptureLoading=true; st.workCaptureError=null; st.workCaptureResult=null; render();
+    try{ st.workCaptureResult=await fetchAiWorkCapture(job,text); }
+    catch(err){ st.workCaptureError=err.message==='no-key'?'Ingen API-nyckel inlagd':(err.message||'Kunde inte tolka anteckningen'); }
+    st.workCaptureLoading=false; return render();
+  }
+  if(a==='save-work-capture'){
+    const job=jobById(st.id), cap=st.workCaptureResult; if(!job||!cap) return;
+    const selected={};
+    $app.querySelectorAll('[data-capture-part]').forEach(el=>{ selected[el.dataset.capturePart]=!!el.checked; });
+    await applyAiWorkCapture(job,cap,selected);
+    st.workCaptureOpen=false; st.workCaptureText=''; st.workCaptureResult=null; st.workCaptureError=null;
+    flash('Arbetsdagen sparad'); return render();
+  }
   if(a==='work-note-cancel'){ st.workNoteOpen=false; return render(); }
   if(a==='work-note-save'){
     const text=(st.workNoteText||'').trim();
@@ -3076,6 +3265,16 @@ $app.addEventListener('click', async e=>{
   /* ---- materiallista: registrera-panel ---- */
   if(a==='open-mat-panel'){
     st.matPanel=true; st.matPanelMode='browse'; st.matTab=st.matTab||'recent'; st.matSearch=''; st.matDraft={};
+  if(a==='search-material-mention'){
+    const job=jobById(st.id); if(!job) return;
+    const i=Number(b.dataset.index), m=(job.materialMentions||[])[i]; if(!m) return;
+    st.matPanel=true; st.matPanelMode='browse'; st.matSearch=m.name; await ensureCatalog(); pushNav(); return render();
+  }
+  if(a==='dismiss-material-mention'){
+    const job=jobById(st.id); if(!job) return;
+    const i=Number(b.dataset.index); job.materialMentions=(job.materialMentions||[]).filter((_,idx)=>idx!==i);
+    job.updatedAt=new Date().toISOString(); await dbPut('jobs',job); return render();
+  }
     pushNav();
     render();
     if(!catalog){
