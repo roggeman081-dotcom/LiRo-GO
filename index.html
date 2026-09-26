@@ -866,30 +866,33 @@ async function applyAiWorkCapture(job, capture, options){
 }
 
 /* ---- "Fråga LiRo AI" i arbetsläget — snabba praktiska svar med jobbet som kontext ---- */
-async function fetchAiJobAnswer(job, question){
-  const key = getAiKey();
-  if(!key) throw new Error('no-key');
-  const system = 'Du är en erfaren svensk elektriker som ger korta, praktiska svar till en kollega som står mitt i ett jobb. Svara kort och konkret på svenska (max 3-4 meningar). Gäller frågan dimensionering, regelverk eller säkerhet — var tydlig men kärnfull, och säg till om något bör dubbelkollas mot gällande föreskrifter istället för att gissa.';
-  const parts = [`Uppdrag: ${job.title}`];
-  if(job.description) parts.push(`Arbetsbeskrivning: ${job.description}`);
-  if(jobMaterials && jobMaterials.length) parts.push(`Material på jobbet: ${jobMaterials.slice(0,25).map(m=>m.name).join(', ')}`);
-  if(job.notes) parts.push(`Anteckningar: ${job.notes}`);
-  if(job.changes) parts.push(`Ändringar/tillägg: ${job.changes}`);
-  parts.push(`Fråga: ${question}`);
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: anthropicHeaders(key),
-    body: JSON.stringify({ model: getAiModel(), max_tokens: 400, system, messages: [{ role:'user', content: parts.join('\n') }] })
+async function fetchAiJobAnswer(job, question, deps){
+  const key=getAiKey(); if(!key) throw new Error('no-key');
+  const system=[
+    'Du är LiRo, en digital kollega till en svensk elektriker.',
+    'Du får en strukturerad projektkontext som är projektets arbetsminne.',
+    'Skilj alltid på fakta i projektet och egna förslag.',
+    'Hitta inte på värden, mätresultat, material, kundbeslut eller utfört arbete.',
+    'Om viktig information saknas, säg vad som saknas.',
+    'För säkerhetskritiska elfrågor ska du vara försiktig och tydligt ange vad som behöver verifieras.',
+    'Svara kort, konkret och praktiskt på svenska. Normalt högst 4 meningar.'
+  ].join(' ');
+  const userContent=['PROJEKTMINNE:',buildLiRoContextText(job,deps),'','FRÅGA:',question].join('\n');
+  const doFetch=()=>fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',headers:anthropicHeaders(key),
+    body:JSON.stringify({model:getAiModel(),max_tokens:500,system,messages:[{role:'user',content:userContent}]})
   });
+  let res=await doFetch();
+  if(res.status===429){ await new Promise(r=>setTimeout(r,1500)); res=await doFetch(); }
   if(!res.ok){
-    let msg = 'API-fel ('+res.status+')';
-    if(res.status===401) msg = 'Ogiltig API-nyckel';
-    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
+    let msg=`API-fel (${res.status})`;
+    if(res.status===401) msg='Ogiltig API-nyckel';
+    else if(res.status===429) msg='För många förfrågningar, försök igen om en stund';
     throw new Error(msg);
   }
-  const data = await res.json();
-  const textBlock = (data.content||[]).find(b=>b.type==='text');
-  return textBlock ? textBlock.text.trim() : '';
+  const data=await res.json();
+  const textBlock=(data.content||[]).find(b=>b.type==='text');
+  return textBlock?textBlock.text.trim():'';
 }
 
 /* ---- AI-förslag i "På radarn" — läser avslutade projekt och föreslår mjuka uppföljningar ---- */
@@ -988,14 +991,18 @@ function matchSuggestionsToCatalog(suggestions){
 }
 
 async function addMaterial(jobId, input){
-  const m={ id:uid(), jobId, name:input.name, description:input.description||'', eNr:input.eNr||'',
-    qty:input.qty||0, unit:input.unit||'st', unitPrice:input.unitPrice||0, kind:input.kind||'used', createdAt:new Date().toISOString() };
+  const now=new Date().toISOString();
+  const m={
+    id:uid(),jobId,name:input.name,description:input.description||'',eNr:input.eNr||'',
+    qty:input.qty||0,unit:input.unit||'st',unitPrice:input.unitPrice||0,kind:input.kind||'used',
+    createdAt:now,updatedAt:now
+  };
   await dbPut('materials',m); return m;
 }
 async function deleteMaterial(id){ await dbDel('materials',id); }
 async function moveMaterialToUsed(id){
-  const m = jobMaterials.find(x=>x.id===id); if(!m) return;
-  m.kind='used'; await dbPut('materials', m);
+  const m=jobMaterials.find(x=>x.id===id); if(!m) return;
+  m.kind='used'; m.updatedAt=new Date().toISOString(); await dbPut('materials',m);
 }
 async function setJobMarkup(jobId, percent){
   const j=jobById(jobId); if(!j) return;
@@ -1005,16 +1012,17 @@ async function setJobMarkup(jobId, percent){
 /* ---- checklista / moment (t.ex. "4 uttag" som bockas av ett i taget) ---- */
 let checklist = [];
 async function addChecklistItem(jobId, input){
-  const it = { id:uid(), jobId, name:input.name, targetQty:Math.max(1, Number(input.targetQty)||1), doneQty:0, createdAt:new Date().toISOString() };
-  await dbPut('checklist', it); checklist.push(it); return it;
+  const now=new Date().toISOString();
+  const it={id:uid(),jobId,name:input.name,targetQty:Math.max(1,toNumber(input.targetQty,1)),doneQty:0,createdAt:now,updatedAt:now};
+  await dbPut('checklist',it); checklist.push(it); return it;
 }
 async function deleteChecklistItem(id){
   await dbDel('checklist', id); checklist = checklist.filter(c=>c.id!==id);
 }
 async function bumpChecklistDone(id, delta){
-  const it = checklist.find(c=>c.id===id); if(!it) return;
-  it.doneQty = Math.max(0, Math.min(it.targetQty, (Number(it.doneQty)||0) + delta));
-  await dbPut('checklist', it);
+  const it=checklist.find(c=>c.id===id); if(!it) return;
+  it.doneQty=Math.max(0,Math.min(toNumber(it.targetQty,0),toNumber(it.doneQty,0)+delta));
+  it.updatedAt=new Date().toISOString(); await dbPut('checklist',it);
 }
 function checklistProgress(jobId){
   const items = checklist.filter(c=>c.jobId===jobId);
@@ -1036,18 +1044,19 @@ async function seedInspectionIfEmpty(jobId){
   const batch = [];
   for(const phase of INSPECTION_PHASES){
     for(const name of phase.defaults){
-      batch.push({ id:uid(), jobId, phase:phase.key, name, checked:false, createdAt:new Date().toISOString() });
+      const now=new Date().toISOString(); batch.push({ id:uid(), jobId, phase:phase.key, name, checked:false, createdAt:now, updatedAt:now });
     }
   }
   for(const it of batch){ await dbPut('inspection', it); inspection.push(it); }
 }
 async function addInspectionItem(jobId, phase, name){
-  const it = { id:uid(), jobId, phase, name, checked:false, createdAt:new Date().toISOString() };
-  await dbPut('inspection', it); inspection.push(it); return it;
+  const now=new Date().toISOString();
+  const it={id:uid(),jobId,phase,name,checked:false,createdAt:now,updatedAt:now};
+  await dbPut('inspection',it); inspection.push(it); return it;
 }
 async function toggleInspectionItem(id){
-  const it = inspection.find(i=>i.id===id); if(!it) return;
-  it.checked = !it.checked; await dbPut('inspection', it);
+  const it=inspection.find(i=>i.id===id); if(!it) return;
+  it.checked=!it.checked; it.updatedAt=new Date().toISOString(); await dbPut('inspection',it);
 }
 async function deleteInspectionItem(id){
   await dbDel('inspection', id); inspection = inspection.filter(i=>i.id!==id);
@@ -1797,6 +1806,182 @@ function vJobDetail(id){
   return vJobOversikt(job);
 }
 
+/* ---- LiRo projektminne: en gemensam projektkontext för vyer och AI ---- */
+function validDateMs(v){
+  if(v==null||v==='') return null;
+  const ms=typeof v==='number'?v:new Date(v).getTime();
+  return Number.isFinite(ms)?ms:null;
+}
+function newestDate(...values){
+  const valid=values.flat().map(validDateMs).filter(v=>v!==null);
+  return valid.length?new Date(Math.max(...valid)).toISOString():null;
+}
+function fmtRelativeProjectTime(value, nowMs=Date.now()){
+  const ms=validDateMs(value); if(ms===null) return '';
+  const diff=nowMs-ms;
+  if(diff<0){
+    const m=Math.ceil((-diff)/60000);
+    if(m<60) return `om ${m} min`;
+    const h=Math.ceil(m/60);
+    if(h<24) return `om ${h} h`;
+    return new Date(ms).toLocaleDateString('sv-SE',{day:'numeric',month:'short'});
+  }
+  const m=Math.floor(diff/60000);
+  if(m<1) return 'nyss';
+  if(m<60) return `${m} min sedan`;
+  const h=Math.floor(m/60);
+  if(h<24) return `${h} h sedan`;
+  const d=Math.floor(h/24);
+  if(d===1) return 'igår';
+  if(d<7) return `${d} dagar sedan`;
+  return new Date(ms).toLocaleDateString('sv-SE',{day:'numeric',month:'short'});
+}
+function getDeps(deps){
+  const safe=(v,fallback)=>Array.isArray(v)?v:(Array.isArray(fallback)?fallback:[]);
+  return {
+    materials:safe(deps?.materials,typeof jobMaterials!=='undefined'?jobMaterials:[]),
+    photos:safe(deps?.photos,typeof jobPhotos!=='undefined'?jobPhotos:[]),
+    checklist:safe(deps?.checklist,typeof checklist!=='undefined'?checklist:[]),
+    inspection:safe(deps?.inspection,typeof inspection!=='undefined'?inspection:[]),
+    radar:safe(deps?.radar,typeof radar!=='undefined'?radar:[])
+  };
+}
+function radarForJob(jobId,deps){
+  const {radar:r}=getDeps(deps);
+  return r.filter(i=>i.jobId===jobId);
+}
+function checklistProgressFrom(jobId,rows){
+  const items=(Array.isArray(rows)?rows:[]).filter(i=>i.jobId===jobId);
+  if(!items.length) return null;
+  const target=items.reduce((s,i)=>s+Math.max(0,toNumber(i.targetQty,0)),0);
+  const done=items.reduce((s,i)=>s+Math.max(0,toNumber(i.doneQty,0)),0);
+  return {items,target,done,percent:target>0?Math.round((done/target)*100):0};
+}
+function inspectionProgressFrom(jobId,rows){
+  const items=(Array.isArray(rows)?rows:[]).filter(i=>i.jobId===jobId);
+  return {items,done:items.filter(i=>i.checked).length,total:items.length};
+}
+function projectMaterialMemory(job,deps){
+  const {materials}=getDeps(deps);
+  const all=materials.filter(m=>m.jobId===job.id);
+  const used=all.filter(m=>m.kind!=='planned');
+  const planned=all.filter(m=>m.kind==='planned');
+  const mentions=Array.isArray(job?.materialMentions)?job.materialMentions:[];
+  const mapMat=m=>({
+    id:m.id,name:m.name,eNr:m.eNr||'',qty:toNumber(m.qty,0),unit:m.unit||'st',
+    unitPrice:toNumber(m.unitPrice,0),createdAt:m.createdAt||null,updatedAt:m.updatedAt||null
+  });
+  return {
+    used:used.map(mapMat),
+    planned:planned.map(mapMat),
+    mentions:mentions.map(m=>({name:m.name,qty:m.qty??null,unit:m.unit||'st',createdAt:m.createdAt||null}))
+  };
+}
+function buildLiRoContext(job,deps){
+  if(!job) return null;
+  const d=getDeps(deps);
+  const customer=typeof customerOf==='function'?customerOf(job):null;
+  const checklistData=checklistProgressFrom(job.id,d.checklist);
+  const inspectionData=inspectionProgressFrom(job.id,d.inspection);
+  const material=projectMaterialMemory(job,d);
+  const projectRadar=radarForJob(job.id,d);
+  const economy=typeof jobEconomySummary==='function'?jobEconomySummary(job):{labor:0,material:{cost:0,markupSum:0},travel:0,other:0,subtotal:0};
+  const photos=d.photos.filter(p=>p.jobId===job.id);
+  const checklistRemaining=checklistData?Math.max(0,checklistData.target-checklistData.done):0;
+  const controlsRemaining=Math.max(0,inspectionData.total-inspectionData.done);
+  return {
+    version:1,generatedAt:new Date().toISOString(),
+    customer:customer?{id:customer.id,name:customer.name||'',phone:customer.phone||'',email:customer.email||'',address:customer.address||''}:null,
+    project:{
+      id:job.id,title:job.title||'',status:job.status||'planned',
+      statusLabel:typeof statusLabel==='function'?statusLabel(job.status).l:job.status,
+      workType:job.workType||null,
+      workTypeLabel:job.workType&&typeof WORK_TYPE_LABEL!=='undefined'?(WORK_TYPE_LABEL[job.workType]||job.workType):(job.workType||''),
+      priority:job.priority||'normal',plannedAt:job.plannedAt||null,
+      siteAddress:typeof jobSiteAddressText==='function'?(jobSiteAddressText(job)||''):'',
+      orderedWork:job.description||'',changes:job.changes||'',diary:job.notes||'',summary:job.summary||'',
+      createdAt:job.createdAt||null,updatedAt:job.updatedAt||null,finishedAt:job.finishedAt||null
+    },
+    time:{loggedHours:Math.max(0,toNumber(job.loggedHours,0)),segments:Array.isArray(job.workSegments)?job.workSegments:[]},
+    material,
+    checklist:{
+      items:checklistData?checklistData.items.map(i=>({id:i.id,name:i.name,doneQty:i.doneQty,targetQty:i.targetQty,completed:toNumber(i.doneQty,0)>=toNumber(i.targetQty,0)})):[],
+      done:checklistData?checklistData.done:0,target:checklistData?checklistData.target:0,remaining:checklistRemaining
+    },
+    inspection:{
+      items:inspectionData.items.map(i=>({id:i.id,phase:i.phase,name:i.name,checked:!!i.checked})),
+      done:inspectionData.done,total:inspectionData.total,remaining:controlsRemaining
+    },
+    documentation:{photoCount:photos.length,photos:photos.slice(-20).map(p=>({id:p.id,comment:p.comment||'',createdAt:p.createdAt||null}))},
+    radar:projectRadar.map(i=>({id:i.id,text:i.text,status:i.status,category:i.category||'general',source:i.source||'manual',reason:i.reason||'',createdAt:i.createdAt||null,doneAt:i.doneAt||null})),
+    economy:{
+      labor:economy.labor,materialCost:economy.material?.cost||0,materialMarkup:economy.material?.markupSum||0,
+      travel:economy.travel,other:economy.other,subtotalExVat:economy.subtotal
+    },
+    state:{
+      hasWork:(toNumber(job.loggedHours,0)>0||material.used.length>0||!!String(job.notes||'').trim()),
+      usedMaterialCount:material.used.length,plannedMaterialCount:material.planned.length,
+      unverifiedMaterialCount:material.mentions.length,checklistRemaining,controlsRemaining,
+      photoCount:photos.length,activeFollowUps:projectRadar.filter(i=>i.status!=='done').length
+    }
+  };
+}
+function buildProjectActivity(job,deps){
+  if(!job) return [];
+  const d=getDeps(deps), events=[];
+  const add=({at,type,title,text,tab,sourceId})=>{
+    const ms=validDateMs(at); if(ms===null) return;
+    events.push({at:new Date(ms).toISOString(),ms,type,title:String(title||''),text:String(text||''),tab:tab||null,sourceId:sourceId||null});
+  };
+  add({at:job.createdAt,type:'project',title:'Uppdrag skapat',text:job.title,tab:'arbete',sourceId:job.id});
+  for(const m of d.materials.filter(x=>x.jobId===job.id)) add({at:m.updatedAt||m.createdAt,type:'material',title:m.kind==='planned'?'Planerat material':'Material registrerat',text:[m.qty?`${m.qty} ${m.unit||'st'}`:'',m.name||''].filter(Boolean).join(' · '),tab:'material',sourceId:m.id});
+  for(const m of (Array.isArray(job.materialMentions)?job.materialMentions:[])) add({at:m.createdAt,type:'material-mention',title:'LiRo hörde material',text:[m.qty?`${m.qty} ${m.unit||'st'}`:'',m.name||''].filter(Boolean).join(' · '),tab:'material'});
+  for(const p of d.photos.filter(x=>x.jobId===job.id)) add({at:p.createdAt,type:'photo',title:'Projektbild sparad',text:p.comment||'Bild utan kommentar',tab:'dokumentation',sourceId:p.id});
+  for(const i of d.checklist.filter(x=>x.jobId===job.id)) add({at:i.updatedAt||i.createdAt,type:'checklist',title:toNumber(i.doneQty,0)>=toNumber(i.targetQty,0)?'Arbetsmoment klart':'Arbetsmoment registrerat',text:`${i.name} · ${i.doneQty}/${i.targetQty}`,tab:'arbete',sourceId:i.id});
+  for(const i of d.inspection.filter(x=>x.jobId===job.id)) add({at:i.updatedAt||i.createdAt,type:'inspection',title:i.checked?'Kontrollpunkt markerad':'Kontrollpunkt skapad',text:i.name,tab:'kontroll',sourceId:i.id});
+  for(const i of radarForJob(job.id,d)) add({at:i.doneAt||i.updatedAt||i.createdAt,type:'radar',title:i.status==='done'?'Uppföljning klar':'Uppföljning på Radarn',text:i.text,tab:null,sourceId:i.id});
+  if(job.finishedAt) add({at:job.finishedAt,type:'finish',title:'Uppdrag avslutat',text:job.title,tab:'faktura',sourceId:job.id});
+  events.sort((a,b)=>b.ms-a.ms);
+  return events;
+}
+function latestProjectActivity(job,deps,limit=4){ return buildProjectActivity(job,deps).slice(0,Math.max(1,limit)); }
+function vProjectActivity(job,deps){
+  const items=latestProjectActivity(job,deps,4); if(!items.length) return '';
+  return `<div class="section"><div class="row between" style="margin-bottom:8px"><div class="subsection-title">Senast hänt</div></div><div class="card" style="padding:4px 16px">${items.map(item=>`
+    <button class="checklist-row" style="width:100%;text-align:left;" ${item.tab?`data-act="open-job-tab" data-tab="${esc(item.tab)}"`:''}>
+      <div class="checklist-info"><div class="checklist-name">${esc(item.title)}</div>${item.text?`<div class="checklist-sub">${esc(item.text)}</div>`:''}</div>
+      <div class="muted" style="font-size:11px;white-space:nowrap;">${esc(fmtRelativeProjectTime(item.at))}</div>
+    </button>`).join('')}</div></div>`;
+}
+function buildProjectHandover(job,deps){
+  const ctx=buildLiRoContext(job,deps); if(!ctx) return null; const messages=[];
+  if(ctx.state.checklistRemaining>0){
+    const first=ctx.checklist.items.find(i=>!i.completed)?.name;
+    messages.push(`${ctx.state.checklistRemaining} arbetsmoment återstår${first?` (${first})`:''}`);
+  }
+  if(ctx.state.controlsRemaining>0) messages.push(`${ctx.state.controlsRemaining} kontrollpunkter återstår`);
+  if(ctx.state.unverifiedMaterialCount>0) messages.push(`${ctx.state.unverifiedMaterialCount} materialförslag behöver verifieras`);
+  if(ctx.state.activeFollowUps>0) messages.push(`${ctx.state.activeFollowUps} uppföljningar på Radarn`);
+  if(ctx.state.photoCount===0&&ctx.state.hasWork) messages.push('inga projektbilder sparade');
+  return {title:'Projektminne',text:messages.length?messages.join(' · '):'Inga öppna punkter upptäckta i projektdata.'};
+}
+function vProjectMemory(job,deps){
+  const memory=buildProjectHandover(job,deps); if(!memory) return '';
+  return `<div class="section"><div class="card" style="padding:14px 16px;"><div class="row gap-xs" style="align-items:flex-start;">${ICON.sparkle}<div><div class="bold" style="font-size:13px">${esc(memory.title)}</div><div class="muted" style="margin-top:4px;font-size:12px;line-height:1.45;">${esc(memory.text)}</div></div></div></div></div>`;
+}
+function buildLiRoContextText(job,deps){
+  const ctx=buildLiRoContext(job,deps); if(!ctx) return '';
+  // AI behöver inte kontaktuppgifter. Minimera persondata som skickas till extern API.
+  const safe={
+    ...ctx,
+    customer:ctx.customer?{id:ctx.customer.id,name:ctx.customer.name}:null,
+    material:{...ctx.material,mentions:ctx.material.mentions.slice(-10)},
+    documentation:{...ctx.documentation,photos:ctx.documentation.photos.slice(-10)},
+    radar:ctx.radar.slice(-15)
+  };
+  return JSON.stringify(safe,null,2);
+}
+
 function getLiRoProjectCheck(job){
   const prog=checklistProgress(job.id);
   const insp=inspectionProgress(job.id);
@@ -1932,7 +2117,11 @@ function vJobOversikt(job){
       ${!finished ? `<button class="muted" style="width:100%;text-align:center;margin-top:12px;font-size:14px;font-weight:600" data-act="open-job-tab" data-tab="avsluta">Avsluta uppdrag</button>` : ''}
     </div>
 
+    ${vProjectMemory(job,{materials:jobMaterials,photos:jobPhotos,checklist,inspection,radar})}
+
     ${vLiRoProjectCheck(job)}
+
+    ${vProjectActivity(job,{materials:jobMaterials,photos:jobPhotos,checklist,inspection,radar})}
 
     <div class="section-cards">
       ${sectionCard('arbete', ICON.wrench, 'Arbete', job.loggedHours ? `${fmtHours(job.loggedHours)} arbetad tid` : (prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar'))}
