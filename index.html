@@ -729,7 +729,7 @@ async function bumpMaterialQty(jobId, row, delta, kind){
 }
 
 /* ---- AI-förslag (Claude API, egen nyckel, direkt från webbläsaren) ---- */
-const AI_MODEL_DEFAULT = 'claude-haiku-4-5';
+const AI_MODEL_DEFAULT = 'claude-haiku-4-5-20251001';
 /* ---- kalendersynk (skrivskyddad iCal-länk, t.ex. publicerad Outlook-kalender) ---- */
 let externalEvents = [];
 function getIcalUrl(){ return localStorage.getItem('lirogo_ical_url') || ''; }
@@ -791,7 +791,14 @@ function getReportEmail(){ return localStorage.getItem('lirogo_report_email') ||
 function setReportEmail(e){ if(e) localStorage.setItem('lirogo_report_email', e); else localStorage.removeItem('lirogo_report_email'); }
 function getAiKey(){ return localStorage.getItem('lirogo_ai_key') || ''; }
 function setAiKey(k){ if(k) localStorage.setItem('lirogo_ai_key', k); else localStorage.removeItem('lirogo_ai_key'); }
-function getAiModel(){ return localStorage.getItem('lirogo_ai_model') || AI_MODEL_DEFAULT; }
+function getAiModel(){
+  const saved=localStorage.getItem('lirogo_ai_model')||'';
+  if(saved==='claude-haiku-4-5'){
+    localStorage.setItem('lirogo_ai_model','claude-haiku-4-5-20251001');
+    return 'claude-haiku-4-5-20251001';
+  }
+  return saved||AI_MODEL_DEFAULT;
+}
 function setAiModel(m){ localStorage.setItem('lirogo_ai_model', m); }
 
 function anthropicHeaders(key){
@@ -802,93 +809,97 @@ function anthropicHeaders(key){
     'anthropic-dangerous-direct-browser-access': 'true'
   };
 }
-async function testAiConnection(){
-  const key = getAiKey();
+function aiErrorMessage(status, detail){
+  if(status===400) return detail?'AI-fel: '+detail:'AI-anropet kunde inte tolkas';
+  if(status===401) return 'Ogiltig Anthropic API-nyckel';
+  if(status===403) return 'API-nyckeln saknar behörighet för vald modell';
+  if(status===404) return 'AI-modellen hittades inte. Kontrollera modellvalet i Inställningar.';
+  if(status===429) return 'Anthropic har tillfälligt begränsat anropen. Försök igen om en stund.';
+  if(status>=500) return 'Anthropic svarar inte just nu. Försök igen om en stund.';
+  return detail?(`API-fel (${status}): ${detail}`):`API-fel (${status})`;
+}
+async function anthropicMessage(input){
+  const key=getAiKey();
   if(!key) throw new Error('no-key');
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: anthropicHeaders(key),
-    body: JSON.stringify({ model: getAiModel(), max_tokens: 8, messages: [{ role:'user', content:'Svara med bara ordet OK.' }] })
-  });
-  if(!res.ok){
-    let msg = 'API-fel ('+res.status+')';
-    if(res.status===401) msg = 'Ogiltig API-nyckel';
-    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
-    throw new Error(msg);
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),25000);
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:anthropicHeaders(key),
+      signal:controller.signal,
+      body:JSON.stringify({
+        model:getAiModel(),
+        max_tokens:input.max_tokens||500,
+        ...(input.system?{system:input.system}:{}),
+        messages:input.messages||[]
+      })
+    });
+    if(!res.ok){
+      let detail='';
+      try{
+        const err=await res.json();
+        detail=err?.error?.message||err?.message||'';
+      }catch{}
+      throw new Error(aiErrorMessage(res.status,detail));
+    }
+    const data=await res.json();
+    const textBlock=(data.content||[]).find(b=>b.type==='text');
+    const text=textBlock?.text?.trim()||'';
+    if(!text) throw new Error('AI:n svarade utan text. Försök igen.');
+    return text;
+  }catch(err){
+    if(err?.name==='AbortError') throw new Error('AI-anropet tog för lång tid och avbröts efter 25 sekunder.');
+    if(err?.message==='Failed to fetch') throw new Error('Kunde inte nå Anthropics API. Kontrollera nätet och testa AI-anslutningen i Inställningar.');
+    throw err;
+  }finally{
+    clearTimeout(timeout);
   }
+}
+
+async function testAiConnection(){
+  await anthropicMessage({
+    max_tokens:8,
+    messages:[{role:'user',content:'Svara med bara ordet OK.'}]
+  });
   return true;
 }
 async function fetchAiSuggestions(description){
-  const key = getAiKey();
-  if(!key) throw new Error('no-key');
-  const system = 'Du är en erfaren svensk elektriker. Utifrån en kort beskrivning av ett arbete, lista 5-10 typiska elmaterial-komponenter som troligen behövs. Svara ENDAST med en JSON-array av korta svenska produktbeskrivningar (utan priser eller artikelnummer), t.ex. ["Automatsäkring 10A 1-pol","Jordfelsbrytare 25A 30mA","Kabelkanal 40x25mm"]. Inget annat i svaret, ingen förklaringstext.';
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: anthropicHeaders(key),
-    body: JSON.stringify({
-      model: getAiModel(),
-      max_tokens: 1024,
-      system,
-      messages: [{ role:'user', content: description }]
-    })
+  const system='Du är en erfaren svensk elektriker. Utifrån en kort beskrivning av ett arbete, lista 5-10 typiska elmaterial-komponenter som troligen behövs. Svara ENDAST med en JSON-array av korta svenska produktbeskrivningar (utan priser eller artikelnummer). Inget annat.';
+  const text=await anthropicMessage({
+    max_tokens:1024,
+    system,
+    messages:[{role:'user',content:description}]
   });
-  if(!res.ok){
-    let msg = 'API-fel ('+res.status+')';
-    if(res.status===401) msg = 'Ogiltig API-nyckel';
-    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
-    throw new Error(msg);
-  }
-  const data = await res.json();
-  const textBlock = (data.content||[]).find(b=>b.type==='text');
-  const text = textBlock ? textBlock.text : '';
-  const match = text.match(/\[[\s\S]*\]/);
+  const match=text.match(/\[[\s\S]*\]/);
   if(!match) return [];
-  try{ const arr = JSON.parse(match[0]); return Array.isArray(arr) ? arr.filter(x=>typeof x==='string') : []; }
-  catch{ return []; }
+  try{
+    const arr=JSON.parse(match[0]);
+    return Array.isArray(arr)?arr.filter(x=>typeof x==='string'):[];
+  }catch{
+    return [];
+  }
 }
 
 async function fetchAiJobSummary(job){
-  const key = getAiKey();
-  if(!key) throw new Error('no-key');
-  const system = 'Du är en erfaren svensk elektriker som skriver korta, professionella sammanfattningar av avslutade arbeten för fakturaunderlag och kundkommunikation. Svara med EN kort sammanfattande text på svenska (2-4 meningar). Inget annat i svaret.';
-  const cl = checklistProgress(job.id);
-  const insp = inspectionProgress(job.id);
-  const parts = [`Uppdrag: ${job.title}`];
-  if(job.description) parts.push(`Arbetsbeskrivning: ${job.description}`);
-  if(cl) parts.push(`Utförda moment: ${cl.items.map(i=>`${i.name} (${i.doneQty}/${i.targetQty})`).join(', ')}`);
-  if(insp.total) parts.push(`Egenkontroll: ${insp.done} av ${insp.total} punkter genomförda.`);
-  if(job.changes) parts.push(`Ändringar/tillägg: ${job.changes}`);
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: anthropicHeaders(key),
-    body: JSON.stringify({ model: getAiModel(), max_tokens: 300, system, messages: [{ role:'user', content: parts.join('\n') }] })
+  const system='Du är LiRo, en digital kollega till en svensk elektriker. Skriv en kort, professionell sammanställning av det faktiskt registrerade arbetet för fakturaunderlag och kundkommunikation. Hitta inte på något. Svara på svenska med 2-4 meningar.';
+  const deps={materials:jobMaterials,photos:jobPhotos,checklist,inspection,radar};
+  const context=buildLiRoContextText(job,deps);
+  return anthropicMessage({
+    max_tokens:350,
+    system,
+    messages:[{role:'user',content:'PROJEKTMINNE:\n'+context+'\n\nSkriv sammanställningen.'}]
   });
-  if(!res.ok){
-    let msg = 'API-fel ('+res.status+')';
-    if(res.status===401) msg = 'Ogiltig API-nyckel';
-    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
-    throw new Error(msg);
-  }
-  const data = await res.json();
-  const textBlock = (data.content||[]).find(b=>b.type==='text');
-  return textBlock ? textBlock.text.trim() : '';
 }
 
 /* ---- "Berätta jobbet" — AI tolkar en fri arbetsanteckning till ett förslag som användaren godkänner ---- */
-async function fetchAiWorkCapture(job, text){
-  const key=getAiKey();
-  if(!key) throw new Error('no-key');
+async function fetchAiWorkCapture(job,text){
   const system=[
     'Du hjälper en svensk elektriker att strukturera en muntlig eller skriven arbetsanteckning.',
-    'Du får INTE hitta på uppgifter. Om något saknas ska fältet vara null, tom sträng eller tom array.',
-    'Tolka endast sådant användaren faktiskt säger.',
-    'Svara ENDAST med giltig JSON, utan markdown eller förklaring.',
-    'Format:',
-    '{"hours":number|null,"workDone":"string","changes":"string","followUp":"string","materials":[{"name":"string","qty":number|null,"unit":"string"}]}',
-    'hours = arbetad tid som uttryckligen nämns. workDone = kort saklig dagbokstext.',
-    'changes = nya kundönskemål/tillägg jämfört med beställningen.',
-    'followUp = EN konkret sak att följa upp senare, annars tom sträng.',
-    'materials = material som uttryckligen nämns, inga gissningar.'
+    'Du får INTE hitta på uppgifter.',
+    'Svara ENDAST med giltig JSON utan markdown.',
+    'Format: {"hours":number|null,"workDone":"string","changes":"string","followUp":"string","materials":[{"name":"string","qty":number|null,"unit":"string"}]}',
+    'Tolka endast sådant användaren faktiskt säger.'
   ].join(' ');
   const context=[
     'Uppdrag: '+job.title,
@@ -896,28 +907,24 @@ async function fetchAiWorkCapture(job, text){
     job.changes?'Befintliga tillägg/ändringar: '+job.changes:'',
     'Arbetsanteckning: '+text
   ].filter(Boolean).join('\n');
-  const res=await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:anthropicHeaders(key),
-    body:JSON.stringify({model:getAiModel(),max_tokens:700,system,messages:[{role:'user',content:context}]})
+  const raw=await anthropicMessage({
+    max_tokens:700,
+    system,
+    messages:[{role:'user',content:context}]
   });
-  if(!res.ok){
-    let msg='API-fel ('+res.status+')';
-    if(res.status===401) msg='Ogiltig API-nyckel';
-    else if(res.status===429) msg='För många förfrågningar, försök igen om en stund';
-    throw new Error(msg);
-  }
-  const data=await res.json();
-  const block=(data.content||[]).find(b=>b.type==='text');
-  const raw=block?block.text.trim():'';
   const match=raw.match(/\{[\s\S]*\}/);
   if(!match) throw new Error('LiRo kunde inte tolka anteckningen');
   let parsed;
-  try{ parsed=JSON.parse(match[0]); }catch{ throw new Error('LiRo gav ett ogiltigt svar'); }
+  try{ parsed=JSON.parse(match[0]); }
+  catch{ throw new Error('LiRo gav ett ogiltigt svar'); }
   const materials=Array.isArray(parsed.materials)?parsed.materials
     .filter(m=>m&&String(m.name||'').trim())
     .slice(0,20)
-    .map(m=>({name:String(m.name).trim(),qty:m.qty===null||m.qty===undefined?null:Math.max(0,toNumber(m.qty,0)),unit:String(m.unit||'st').trim()||'st'})):[];
+    .map(m=>({
+      name:String(m.name).trim(),
+      qty:m.qty===null||m.qty===undefined?null:Math.max(0,toNumber(m.qty,0)),
+      unit:String(m.unit||'st').trim()||'st'
+    })):[];
   return {
     hours:parsed.hours===null||parsed.hours===undefined?null:Math.max(0,toNumber(parsed.hours,0)),
     workDone:String(parsed.workDone||'').trim(),
@@ -962,33 +969,22 @@ async function applyAiWorkCapture(job, capture, options){
 }
 
 /* ---- "Fråga LiRo AI" i arbetsläget — snabba praktiska svar med jobbet som kontext ---- */
-async function fetchAiJobAnswer(job, question, deps){
-  const key=getAiKey(); if(!key) throw new Error('no-key');
+async function fetchAiJobAnswer(job,question,deps){
   const system=[
     'Du är LiRo, en digital kollega till en svensk elektriker.',
     'Du får en strukturerad projektkontext som är projektets arbetsminne.',
     'Skilj alltid på fakta i projektet och egna förslag.',
     'Hitta inte på värden, mätresultat, material, kundbeslut eller utfört arbete.',
     'Om viktig information saknas, säg vad som saknas.',
-    'För säkerhetskritiska elfrågor ska du vara försiktig och tydligt ange vad som behöver verifieras.',
+    'För säkerhetskritiska elfrågor ska du tydligt ange vad som behöver verifieras.',
     'Svara kort, konkret och praktiskt på svenska. Normalt högst 4 meningar.'
   ].join(' ');
   const userContent=['PROJEKTMINNE:',buildLiRoContextText(job,deps),'','FRÅGA:',question].join('\n');
-  const doFetch=()=>fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',headers:anthropicHeaders(key),
-    body:JSON.stringify({model:getAiModel(),max_tokens:500,system,messages:[{role:'user',content:userContent}]})
+  return anthropicMessage({
+    max_tokens:500,
+    system,
+    messages:[{role:'user',content:userContent}]
   });
-  let res=await doFetch();
-  if(res.status===429){ await new Promise(r=>setTimeout(r,1500)); res=await doFetch(); }
-  if(!res.ok){
-    let msg=`API-fel (${res.status})`;
-    if(res.status===401) msg='Ogiltig API-nyckel';
-    else if(res.status===429) msg='För många förfrågningar, försök igen om en stund';
-    throw new Error(msg);
-  }
-  const data=await res.json();
-  const textBlock=(data.content||[]).find(b=>b.type==='text');
-  return textBlock?textBlock.text.trim():'';
 }
 
 /* ---- AI-förslag i "På radarn" — läser avslutade projekt och föreslår mjuka uppföljningar ---- */
@@ -1011,40 +1007,14 @@ function pickRadarAiCandidate(){
 }
 
 async function fetchAiRadarSuggestion(job){
-  const key = getAiKey();
-  if(!key) throw new Error('no-key');
-  const system = 'Du är en mjuk, hjälpsam assistent för en svensk elektriker (LiRo Elteknik). Utifrån information om ett avslutat projekt ska du föreslå EN kort, mjuk uppföljningstanke eller idé till hans personliga "På radarn"-lista — t.ex. en kundkontakt, en möjlig komplettering eller något som nämndes men inte är löst. Använd en mjuk, icke-stressande ton med formuleringar som "Har vi…", "Ska vi kanske…", "Kan det vara läge att…", "Värt att kolla…", "Vill du följa upp…". Undvik varningar, krav och stressande ord. Svara med ENDAST en kort mening på svenska — ingen förklaring, inga citattecken, inget annat.';
-  const c = customerOf(job);
-  const cl = checklistProgress(job.id);
-  const insp = inspectionProgress(job.id);
-  const materials = await dbByJob('materials', job.id);
-  const usedMaterials = materials.filter(m=>m.kind!=='planned');
-  const parts = [
-    `Projekttyp: ${job.workType ? WORK_TYPE_LABEL[job.workType] : 'okänd'}`,
-    `Kund: ${c ? c.name : 'okänd'}`,
-    `Status: ${job.status==='invoiced'?'Fakturerat':'Avslutat'}`
-  ];
-  if(job.finishedAt) parts.push(`Avslutat: ${fmtDateTime(job.finishedAt)}`);
-  if(job.description) parts.push(`Arbetsbeskrivning: ${job.description}`);
-  if(usedMaterials.length) parts.push(`Installerat material: ${usedMaterials.map(m=>m.name).join(', ')}`);
-  if(job.notes) parts.push(`Projektanteckningar: ${job.notes}`);
-  if(job.changes) parts.push(`Framtida arbete/ändringar som nämnts: ${job.changes}`);
-  if(cl) parts.push(`Att göra: ${cl.done}/${cl.target} moment klara`);
-  if(insp.total) parts.push(`Egenkontroll: ${insp.done}/${insp.total} punkter genomförda${insp.done<insp.total?' (ofullständig — saknad dokumentation)':''}`);
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: anthropicHeaders(key),
-    body: JSON.stringify({ model: getAiModel(), max_tokens: 150, system, messages: [{ role:'user', content: parts.join('\n') }] })
+  const system='Du är en mjuk, hjälpsam assistent för en svensk elektriker. Föreslå EN kort uppföljningstanke till På radarn utifrån projektdata. Hitta inte på något. Svara med endast en kort mening på svenska.';
+  const deps={materials:await dbByJob('materials',job.id),photos:[],checklist,inspection,radar};
+  const text=await anthropicMessage({
+    max_tokens:150,
+    system,
+    messages:[{role:'user',content:buildLiRoContextText(job,deps)}]
   });
-  if(!res.ok){
-    let msg = 'API-fel ('+res.status+')';
-    if(res.status===401) msg = 'Ogiltig API-nyckel';
-    else if(res.status===429) msg = 'För många förfrågningar, försök igen om en stund';
-    throw new Error(msg);
-  }
-  const data = await res.json();
-  const textBlock = (data.content||[]).find(b=>b.type==='text');
-  return textBlock ? textBlock.text.trim().replace(/^"|"$/g,'') : '';
+  return text.replace(/^"|"$/g,'');
 }
 
 async function maybeGenerateRadarSuggestion(){
@@ -2578,7 +2548,8 @@ function vJobFaktura(job){
       <div class="subsection-title">AI-sammanfattning</div>
       <textarea placeholder="Skriv en sammanfattning eller låt AI föreslå en…" data-field="job-summary">${esc(job.summary||'')}</textarea>
       <div style="margin-top:10px">
-        <button class="tile row-tile" data-act="ai-job-summary" data-id="${job.id}">${ICON.sparkle}<span class="t-text">${st.aiSummaryLoading?'Tänker…':'Skapa AI-förslag'}<span class="t-sub" style="display:block">${getAiKey()?'Baserat på beskrivning, att göra och egenkontroll':'Kräver API-nyckel i Inställningar'}</span></span></button>
+        <button class="tile row-tile" data-act="ai-job-summary" data-id="${job.id}" ${st.aiSummaryLoading?'disabled':''}>${ICON.sparkle}<span class="t-text">${st.aiSummaryLoading?'Sammanställer…':'Skapa AI-sammanställning'}<span class="t-sub" style="display:block">${getAiKey()?'Baserat på hela projektminnet':'Kräver API-nyckel i Inställningar'}</span></span></button>
+        ${st.aiSummaryError?`<div class="card" style="margin-top:10px;padding:12px 14px"><div class="bold" style="font-size:13px">AI kunde inte skapa sammanställningen</div><div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">${esc(st.aiSummaryError)}</div><button class="muted" style="font-size:12px;margin-top:8px" data-act="open-ai-settings">Öppna AI-inställningar</button></div>`:''}
       </div>
     </div>
 
@@ -3064,7 +3035,7 @@ function vSettingsAi(){
           <input type="password" placeholder="sk-ant-…" value="${esc(key)}" data-field="ai-key" autocomplete="off">
         </div>
         <div class="model-choice">
-          <button class="model-opt ${model==='claude-haiku-4-5'?'on':''}" data-act="choose-model" data-model="claude-haiku-4-5">
+          <button class="model-opt ${model==='claude-haiku-4-5-20251001'?'on':''}" data-act="choose-model" data-model="claude-haiku-4-5-20251001">
             <span><b>Haiku 4.5</b><br><span class="muted" style="font-size:12px">Billigast, snabb — bra för materialförslag</span></span>
           </button>
           <button class="model-opt ${model==='claude-opus-5'?'on':''}" data-act="choose-model" data-model="claude-opus-5">
@@ -3073,7 +3044,7 @@ function vSettingsAi(){
         </div>
         ${key ? `
         <div style="margin-top:16px">
-          <button class="tile row-tile" data-act="test-ai-connection">${ICON.zap}<span class="t-text">${st.aiTestState==='testing'?'Testar…':'Testa anslutning'}<span class="t-sub" style="display:block;color:${st.aiTestState==='ok'?'var(--accent)':st.aiTestState==='error'?'var(--pri-urgent)':'var(--muted)'}">${(st.aiTestState==='ok'||st.aiTestState==='error') ? esc(st.aiTestMsg) : 'Skicka en testfråga för att se att nyckeln funkar'}</span></span></button>
+          <button class="tile row-tile" data-act="test-ai-connection">${ICON.zap}<span class="t-text">${st.aiTestState==='testing'?'Testar…':'Testa anslutning'}<span class="t-sub" style="display:block;color:${st.aiTestState==='ok'?'var(--accent)':st.aiTestState==='error'?'var(--pri-urgent)':'var(--muted)'}">${(st.aiTestState==='ok'||st.aiTestState==='error') ? esc(st.aiTestMsg) : 'Testa API-nyckel, modell och anslutning'}</span></span></button>
         </div>` : ''}
         ${key ? `<button class="muted" style="font-size:13px;margin-top:16px" data-act="clear-ai-key">Ta bort nyckel</button>` : ''}
       </div>
@@ -3553,7 +3524,7 @@ $app.addEventListener('click', async e=>{
     st.workAiLoading=true; st.workAiError=null; st.workAiAnswer=null; render();
     (async()=>{
       try{
-        st.workAiAnswer = await fetchAiJobAnswer(job, question);
+        st.workAiAnswer = await fetchAiJobAnswer(job,question,{materials:jobMaterials,photos:jobPhotos,checklist,inspection,radar});
       }catch(err){
         st.workAiError = err.message==='no-key' ? 'Ingen API-nyckel inlagd'
           : err.message==='Failed to fetch' ? 'Kunde inte nå Anthropics API — kontrollera nätet'
@@ -3600,15 +3571,22 @@ $app.addEventListener('click', async e=>{
   }
   if(a==='ai-job-summary'){
     const job=jobById(b.dataset.id); if(!job) return;
-    st.aiSummaryLoading=true; render();
+    if(!getAiKey()){ settingsOpen=true; st.settingsTab='ai'; pushNav(); flash('Lägg till eller testa API-nyckeln först'); return render(); }
+    st.aiSummaryLoading=true; st.aiSummaryError=null; render();
     try{
-      job.summary = await fetchAiJobSummary(job);
-      await dbPut('jobs', job);
+      job.summary=await fetchAiJobSummary(job);
+      job.updatedAt=new Date().toISOString();
+      await dbPut('jobs',job);
+      flash('AI-sammanställning klar');
     }catch(err){
-      flash(err.message==='no-key' ? 'Ingen API-nyckel inlagd' : (err.message||'Något gick fel'));
+      st.aiSummaryError=err.message||'Något gick fel';
+    }finally{
+      st.aiSummaryLoading=false;
     }
-    st.aiSummaryLoading=false;
     return render();
+  }
+  if(a==='open-ai-settings'){
+    settingsOpen=true; st.settingsTab='ai'; pushNav(); return render();
   }
 
   if(a==='wiz-back'){ history.back(); return; }
