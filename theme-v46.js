@@ -46,6 +46,17 @@
         '--ink':'#171A16','--line':'#424844'
       },
       colorScheme:'dark',themeColor:'#202322'
+    },
+    orange:{
+      label:'Orange & svart',
+      note:'Svart bas med orange accent',
+      preview:['#111111','#1D1D1D','#FF7A00'],
+      vars:{
+        '--bg':'#111111','--surface':'#1D1D1D','--surface2':'#292929',
+        '--text':'#F7F7F7','--muted':'#B8B8B8','--accent':'#FF7A00',
+        '--ink':'#17100A','--line':'#3A3A3A'
+      },
+      colorScheme:'dark',themeColor:'#111111'
     }
   };
 
@@ -61,14 +72,16 @@
     .theme-option-sub-v46{font-size:12px;color:var(--muted);margin-top:2px}
     html[data-liro-resolved-theme="dark"] .brand-mini,
     html[data-liro-resolved-theme="graphite"] .brand-mini,
+    html[data-liro-resolved-theme="orange"] .brand-mini,
     html[data-liro-resolved-theme="dark"] .open-logo,
-    html[data-liro-resolved-theme="graphite"] .open-logo{filter:invert(1) brightness(1.08)}
+    html[data-liro-resolved-theme="graphite"] .open-logo,
+    html[data-liro-resolved-theme="orange"] .open-logo{filter:invert(1) brightness(1.08)}
   `;
   document.head.appendChild(style);
 
   function selectedTheme(){
     const saved=localStorage.getItem(STORAGE_KEY)||'original';
-    return ['original','dark','blue','graphite','auto'].includes(saved)?saved:'original';
+    return ['original','dark','blue','graphite','orange','auto'].includes(saved)?saved:'original';
   }
   function resolvedTheme(selected){
     if(selected!=='auto') return selected;
@@ -118,6 +131,7 @@
       ['dark',THEMES.dark],
       ['blue',THEMES.blue],
       ['graphite',THEMES.graphite],
+      ['orange',THEMES.orange],
       ['auto',{label:'Automatiskt',note:'Följer telefonens ljust/mörkt läge',preview:['#F7F2E9','#171A16','#A8C93B']}]
     ].map(([key,t])=>`
       <button class="theme-option-v46 ${current===key?'on':''}" data-act="set-theme-v46" data-theme="${key}">
@@ -166,7 +180,7 @@
     const b=e.target.closest('[data-act="set-theme-v46"]');
     if(!b) return;
     const theme=b.dataset.theme;
-    if(!['original','dark','blue','graphite','auto'].includes(theme)) return;
+    if(!['original','dark','blue','graphite','orange','auto'].includes(theme)) return;
     saveTheme(theme);
     if(typeof flash==='function') flash('Färgtema sparat');
     if(typeof render==='function') render();
