@@ -1797,6 +1797,98 @@ function vJobDetail(id){
   return vJobOversikt(job);
 }
 
+function getLiRoProjectCheck(job){
+  const prog=checklistProgress(job.id);
+  const insp=inspectionProgress(job.id);
+  const used=jobMaterials.filter(m=>m.kind!=='planned').length;
+  const pendingMentions=Array.isArray(job.materialMentions)?job.materialMentions.length:0;
+  const hasWork=(toNumber(job.loggedHours,0)>0) || used>0 || !!(job.notes&&job.notes.trim());
+  const linkedRadar=radar.some(r=>r.jobId===job.id && r.status!=='done');
+
+  if(prog && prog.target>0 && prog.done>=prog.target && insp.total>0 && insp.done<insp.total){
+    return {
+      tone:'attention',
+      title:'LiRo-koll',
+      text:`Arbetsmomenten ser klara ut, men ${insp.total-insp.done} kontrollpunkter återstår.`,
+      tab:'kontroll',
+      action:'Öppna kontroll'
+    };
+  }
+
+  if(hasWork && insp.total===0){
+    return {
+      tone:'attention',
+      title:'LiRo-koll',
+      text:'Arbete är registrerat men egenkontrollen är inte påbörjad.',
+      tab:'kontroll',
+      action:'Starta kontroll'
+    };
+  }
+
+  if(pendingMentions>0){
+    return {
+      tone:'info',
+      title:'LiRo-koll',
+      text:`Du har ${pendingMentions} materialförslag som LiRo hört men som ännu inte är verifierade.`,
+      tab:'material',
+      action:'Kontrollera material'
+    };
+  }
+
+  if(job.changes && job.changes.trim() && !linkedRadar){
+    return {
+      tone:'info',
+      title:'LiRo-koll',
+      text:'Det finns tillägg eller ändringar dokumenterade. Kontrollera om något behöver följas upp.',
+      tab:'arbete',
+      action:'Visa arbete'
+    };
+  }
+
+  if(hasWork && jobPhotos.length===0){
+    return {
+      tone:'info',
+      title:'LiRo-koll',
+      text:'Arbete är registrerat men inga projektbilder är sparade ännu.',
+      tab:'dokumentation',
+      action:'Lägg till bild'
+    };
+  }
+
+  if(insp.total>0 && insp.done===insp.total && (!prog || prog.done>=prog.target) && hasWork){
+    return {
+      tone:'ok',
+      title:'LiRo-koll',
+      text:'Arbetet och registrerade kontrollpunkter ser klara ut. Nästa steg kan vara att granska avslut och fakturaunderlag.',
+      tab:'avsluta',
+      action:'Granska avslut'
+    };
+  }
+
+  return null;
+}
+
+function vLiRoProjectCheck(job){
+  const check=getLiRoProjectCheck(job);
+  if(!check) return '';
+  const icon=check.tone==='ok'?ICON.check:ICON.sparkle;
+  return `
+    <div class="section">
+      <button class="card" style="width:100%;text-align:left;padding:14px 16px" data-act="open-job-tab" data-tab="${check.tab}">
+        <div class="row between" style="gap:12px;align-items:flex-start">
+          <div class="row gap-xs" style="align-items:flex-start;min-width:0">
+            <span style="flex:0 0 auto;margin-top:1px">${icon}</span>
+            <div style="min-width:0">
+              <div class="bold" style="font-size:13px">${esc(check.title)}</div>
+              <div class="muted" style="font-size:12px;line-height:1.45;margin-top:3px">${esc(check.text)}</div>
+            </div>
+          </div>
+          <span class="accent" style="font-size:12px;font-weight:700;flex:0 0 auto">${esc(check.action)}</span>
+        </div>
+      </button>
+    </div>`;
+}
+
 /* ---- Uppdrag: Översikt ---- */
 function vJobOversikt(job){
   const c = customerOf(job);
@@ -1839,6 +1931,8 @@ function vJobOversikt(job){
       <button class="primary-btn" style="width:100%" data-act="${primaryAct}">${primaryLabel}</button>
       ${!finished ? `<button class="muted" style="width:100%;text-align:center;margin-top:12px;font-size:14px;font-weight:600" data-act="open-job-tab" data-tab="avsluta">Avsluta uppdrag</button>` : ''}
     </div>
+
+    ${vLiRoProjectCheck(job)}
 
     <div class="section-cards">
       ${sectionCard('arbete', ICON.wrench, 'Arbete', job.loggedHours ? `${fmtHours(job.loggedHours)} arbetad tid` : (prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar'))}
@@ -2001,7 +2095,7 @@ function vJobKontroll(job){
     </div>`;
   };
 
-  const slutStatus = prog.total===0 ? 'Ingen kontroll påbörjad' : (prog.done===prog.total ? 'Kontroll klar' : `${prog.total-prog.done} punkter kvar`);
+  const slutStatus = prog.total===0 ? 'Ingen kontroll påbörjad' : (prog.done===prog.total ? 'Registrerade kontrollpunkter klara' : `${prog.total-prog.done} punkter kvar`);
 
   return `
   ${vWizHeader('Kontroll', false, undefined, undefined, 'job-tab-back')}
