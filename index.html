@@ -864,6 +864,78 @@ async function testAiConnection(){
   });
   return true;
 }
+async function runAllAiTests(){
+  const testJob={
+    id:'__liro_ai_selftest__',customerId:null,title:'AI självtest',
+    description:'Byt ett befintligt vägguttag och kontrollera funktionen.',
+    changes:'',notes:'Arbetet är ett testunderlag och ska inte sparas.',summary:'',
+    status:'active',priority:'normal',plannedAt:new Date().toISOString(),
+    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),
+    workSegments:[],loggedHours:1,hourlyRate:625,markupPercent:15,
+    travelMode:'none',otherCosts:0,materialMentions:[]
+  };
+  const tests=[
+    {key:'connection',label:'Anslutning',run:async()=>{await testAiConnection();return 'API och modell svarar';}},
+    {key:'materials',label:'Materialförslag',run:async()=>{
+      const rows=await fetchAiSuggestions('Byt ett befintligt vägguttag.');
+      if(!Array.isArray(rows)||!rows.length) throw new Error('AI gav inga materialförslag');
+      return rows.length+' förslag mottagna';
+    }},
+    {key:'summary',label:'Sammanställning',run:async()=>{
+      const text=await fetchAiJobSummary(testJob);
+      if(!String(text||'').trim()) throw new Error('Tom sammanställning');
+      return 'Sammanställning skapad';
+    }},
+    {key:'capture',label:'Berätta jobbet',run:async()=>{
+      const parsed=await fetchAiWorkCapture(testJob,'Jag jobbade två timmar, bytte ett vägguttag och använde två meter kabel. Följ upp garagebelysningen senare.');
+      if(!parsed||typeof parsed!=='object') throw new Error('Svaret kunde inte struktureras');
+      if(!parsed.workDone&&!parsed.hours&&!(parsed.materials||[]).length) throw new Error('AI tolkade ingen arbetsdata');
+      return 'Arbetsanteckning tolkad';
+    }},
+    {key:'ask',label:'Fråga LiRo',run:async()=>{
+      const text=await fetchAiJobAnswer(testJob,'Vad vet du säkert om det här testjobbet?',{materials:[],photos:[],checklist:[],inspection:[],radar:[]});
+      if(!String(text||'').trim()) throw new Error('Tomt svar');
+      return 'Projektfråga besvarad';
+    }},
+    {key:'radar',label:'På radarn',run:async()=>{
+      const text=await fetchAiRadarSuggestion(testJob);
+      if(!String(text||'').trim()) throw new Error('Tomt Radarförslag');
+      return 'Uppföljningsförslag skapat';
+    }}
+  ];
+  st.aiAllTestResults=[];
+  st.aiAllTestRunning=true;
+  render();
+  for(const test of tests){
+    const item={key:test.key,label:test.label,state:'testing',message:'Testar…'};
+    st.aiAllTestResults.push(item);
+    render();
+    try{
+      item.message=await test.run();
+      item.state='ok';
+    }catch(err){
+      item.state='error';
+      item.message=err?.message==='no-key'?'Ingen API-nyckel inlagd':(err?.message||'Testet misslyckades');
+    }
+    render();
+  }
+  st.aiAllTestRunning=false;
+  st.aiAllTestAt=new Date().toISOString();
+  render();
+  return st.aiAllTestResults;
+}
+
+function vAiAllTestResults(){
+  const rows=Array.isArray(st.aiAllTestResults)?st.aiAllTestResults:[];
+  if(!rows.length) return '';
+  const okCount=rows.filter(r=>r.state==='ok').length;
+  const done=!st.aiAllTestRunning&&rows.length===6;
+  return '<div class="card" style="margin-top:12px;padding:6px 14px">'+
+    rows.map(r=>'<div class="checklist-row"><div class="checklist-info"><div class="checklist-name">'+esc(r.label)+'</div><div class="checklist-sub">'+esc(r.message||'')+'</div></div><span style="font-weight:700;color:'+(r.state==='ok'?'var(--accent)':r.state==='error'?'var(--pri-urgent)':'var(--muted)')+'">'+(r.state==='ok'?'✓':r.state==='error'?'Fel':'…')+'</span></div>').join('')+
+    '</div>'+
+    (done?'<p class="settings-note" style="margin-top:8px">'+(okCount===6?'Alla 6 AI-funktioner fungerar med den här nyckeln och modellen.':okCount+' av 6 tester godkända. Se felraderna ovan.')+'</p>':'');
+}
+
 async function fetchAiSuggestions(description){
   const system='Du är en erfaren svensk elektriker. Utifrån en kort beskrivning av ett arbete, lista 5-10 typiska elmaterial-komponenter som troligen behövs. Svara ENDAST med en JSON-array av korta svenska produktbeskrivningar (utan priser eller artikelnummer). Inget annat.';
   const text=await anthropicMessage({
@@ -3046,6 +3118,13 @@ function vSettingsAi(){
         <div style="margin-top:16px">
           <button class="tile row-tile" data-act="test-ai-connection">${ICON.zap}<span class="t-text">${st.aiTestState==='testing'?'Testar…':'Testa anslutning'}<span class="t-sub" style="display:block;color:${st.aiTestState==='ok'?'var(--accent)':st.aiTestState==='error'?'var(--pri-urgent)':'var(--muted)'}">${(st.aiTestState==='ok'||st.aiTestState==='error') ? esc(st.aiTestMsg) : 'Testa API-nyckel, modell och anslutning'}</span></span></button>
         </div>` : ''}
+        ${key ? `
+        <div style="margin-top:10px">
+          <button class="tile row-tile" data-act="test-all-ai" ${st.aiAllTestRunning?'disabled':''}>
+            ${ICON.sparkle}<span class="t-text">${st.aiAllTestRunning?'Testar alla AI-funktioner…':'Testa alla AI-funktioner'}<span class="t-sub" style="display:block">Anslutning, material, sammanställning, Berätta jobbet, Fråga LiRo och Radar</span></span>
+          </button>
+          ${vAiAllTestResults()}
+        </div>` : ''}
         ${key ? `<button class="muted" style="font-size:13px;margin-top:16px" data-act="clear-ai-key">Ta bort nyckel</button>` : ''}
       </div>
     </div>
@@ -3280,7 +3359,7 @@ $app.addEventListener('input', e=>{
     });
     return;
   }
-  if(f==='ai-key'){ setAiKey(t.value.trim()); st.aiTestState=null; return; }
+  if(f==='ai-key'){ setAiKey(t.value.trim()); st.aiTestState=null; st.aiAllTestResults=[]; st.aiAllTestAt=null; return; }
   if(f==='report-email'){ setReportEmail(t.value.trim()); return; }
   if(f==='ical-url'){ setIcalUrl(t.value.trim()); return; }
   if(f==='price-search'){
@@ -3768,8 +3847,8 @@ $app.addEventListener('click', async e=>{
   }
   if(a==='open-calendar'){ calendarOpen=true; pushNav(); return render(); }
   if(a==='close-calendar'){ history.back(); return; }
-  if(a==='choose-model'){ setAiModel(b.dataset.model); return render(); }
-  if(a==='clear-ai-key'){ setAiKey(''); st.aiTestState=null; flash('Nyckel borttagen'); return render(); }
+  if(a==='choose-model'){ setAiModel(b.dataset.model); st.aiAllTestResults=[]; st.aiAllTestAt=null; return render(); }
+  if(a==='clear-ai-key'){ setAiKey(''); st.aiTestState=null; st.aiAllTestResults=[]; st.aiAllTestAt=null; flash('Nyckel borttagen'); return render(); }
   if(a==='test-ai-connection'){
     st.aiTestState='testing'; st.aiTestMsg=''; render();
     (async()=>{
@@ -3784,6 +3863,16 @@ $app.addEventListener('click', async e=>{
       }
       render();
     })();
+    return;
+  }
+  if(a==='test-all-ai'){
+    if(st.aiAllTestRunning) return;
+    if(!getAiKey()){ flash('Lägg till en API-nyckel först'); return; }
+    runAllAiTests().catch(err=>{
+      st.aiAllTestRunning=false;
+      flash(err?.message||'Kunde inte köra AI-testerna');
+      render();
+    });
     return;
   }
   if(a==='toggle-fav'){ toggleFavoriteArtnr(b.dataset.artnr); return render(); }
