@@ -2,7 +2,7 @@
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v46';
+const CACHE = 'lirogo-v47';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js'];
 
 self.addEventListener('install', e => {
