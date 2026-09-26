@@ -20,15 +20,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install Playwright
+      - name: Install Playwright and static server
         run: |
           npm init -y >/dev/null 2>&1
-          npm install playwright@latest
+          npm install playwright@latest http-server@latest
           npx playwright install --with-deps webkit
       - name: Run iPhone-like WebKit test
-        env:
-          APP_URL: https://roggeman081-dotcom.github.io/LiRo-GO/
         run: |
+          npx http-server . -p 4173 -c-1 >/tmp/liro-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          for i in {1..30}; do curl -fsS http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done
           node <<'NODE'
           const { webkit, devices } = require('playwright');
           (async() => {
@@ -38,27 +40,44 @@ jobs:
             const errors = [];
             page.on('pageerror', e => errors.push('pageerror: ' + e.message));
             page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-            const response = await page.goto(process.env.APP_URL, { waitUntil: 'networkidle', timeout: 45000 });
+
+            const url = 'http://127.0.0.1:4173/';
+            const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
             if (!response || !response.ok()) throw new Error('Appen svarade inte OK: ' + (response && response.status()));
-            await page.waitForTimeout(1500);
+
+            await page.evaluate(async () => {
+              if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
+            });
+            await page.reload({ waitUntil: 'networkidle' });
+            await page.waitForTimeout(1200);
+
             const body = await page.locator('body').innerText();
-            if (!body.includes('LiRo rekommenderar')) throw new Error('Nya startsidan syns inte');
+            if (!body.includes('LiRo rekommenderar')) throw new Error('Nya startsidan syns inte efter PWA-reload');
             if (!body.includes('Materialvinst')) throw new Error('Materialvinst saknas på startsidan');
+
             const stats = page.locator('[data-act="open-stats-v44"]').first();
             if (await stats.count() !== 1) throw new Error('Statistikknappen hittades inte');
             await stats.click();
             await page.waitForTimeout(500);
             const body2 = await page.locator('body').innerText();
             if (!body2.includes('Statistik')) throw new Error('Statistikvyn öppnades inte');
-            const nav = ['Hem','Projekt','Radar','Mer'];
-            for (const label of nav) if (!body.includes(label)) throw new Error('Bottenmeny saknar ' + label);
+
+            for (const label of ['Hem','Projekt','Radar','Mer']) {
+              if (!body.includes(label)) throw new Error('Bottenmeny saknar ' + label);
+            }
+
             const sw = await page.evaluate(async () => {
               if (!('serviceWorker' in navigator)) return { supported:false };
               const reg = await navigator.serviceWorker.getRegistration();
-              return { supported:true, active: !!reg?.active, scriptURL: reg?.active?.scriptURL || null };
+              const cacheKeys = await caches.keys();
+              return { supported:true, active: !!reg?.active, scriptURL: reg?.active?.scriptURL || null, cacheKeys };
             });
-            console.log(JSON.stringify({ ok:true, url:page.url(), viewport:page.viewportSize(), serviceWorker:sw, errors }, null, 2));
-            if (errors.length) throw new Error('JavaScript-fel upptäcktes: ' + errors.join(' | '));
+            if (!sw.active) throw new Error('Service worker blev inte aktiv');
+            if (!sw.cacheKeys.includes('lirogo-v45')) throw new Error('lirogo-v45 saknas i cache');
+
+            const criticalErrors = errors.filter(e => !e.includes('favicon'));
+            console.log(JSON.stringify({ ok:true, url:page.url(), viewport:page.viewportSize(), serviceWorker:sw, errors:criticalErrors }, null, 2));
+            if (criticalErrors.length) throw new Error('JavaScript-fel upptäcktes: ' + criticalErrors.join(' | '));
             await browser.close();
           })().catch(err => { console.error(err); process.exit(1); });
           NODE
