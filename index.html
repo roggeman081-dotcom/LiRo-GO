@@ -1018,7 +1018,15 @@ async function seedDemoIfEmpty(){
   await createJob({customerId:c.id, kind:'customer_job', title:'Felsökning elcentral', workType:'switchboard', plannedAt:today.toISOString(), priority:'high'});
   await createJob({customerId:c.id, kind:'customer_job', title:'Installation laddbox', workType:'charging', plannedAt:tomorrow.toISOString(), priority:'normal'});
 }
-function todaysJobs(){ return jobs.filter(j=>j.status!=='done'&&j.status!=='invoiced').sort((a,b)=>(a.plannedAt||'').localeCompare(b.plannedAt||'')); }
+function todaysJobs(){
+  return jobs
+    .filter(j=>j.status!=='done'&&j.status!=='invoiced')
+    .sort((a,b)=>{
+      const at=a.plannedAt?new Date(a.plannedAt).getTime():Infinity;
+      const bt=b.plannedAt?new Date(b.plannedAt).getTime():Infinity;
+      return at-bt;
+    });
+}
 function customerOf(j){ return customers.find(c=>c.id===j.customerId); }
 
 /* ================= Formattering ================= */
@@ -1046,9 +1054,12 @@ function fmtDateTime(plannedAt){
 function statusLabel(status){
   if(status==='invoiced') return {l:'Fakturerat', on:false};
   if(status==='done') return {l:'Klart', on:false};
-  if(status==='ongoing') return {l:'Pågår', on:true};
-  if(status==='tomorrow') return {l:'Imorgon', on:false};
-  return {l:'Senare', on:false};
+  if(status==='active' || status==='ongoing') return {l:'Pågående', on:true};
+  if(status==='waiting') return {l:'Väntar', on:false};
+  if(status==='planned') return {l:'Planerat', on:false};
+  if(status==='tomorrow') return {l:'Planerat', on:false};
+  if(status==='later') return {l:'Planerat', on:false};
+  return {l:'Planerat', on:false};
 }
 
 /* ================= State ================= */
@@ -1211,10 +1222,10 @@ function vHome(){
   </div>
   <div class="idag">
     <div class="row between idag-head">
-      <div class="h2">Idag</div>
+      <div class="h2">Pågående uppdrag</div>
       ${list.length>1?`<div class="steps">${list.map((_,i)=>`<div class="dash ${i===0?'on':''}"></div>`).join('')}</div>`:''}
     </div>
-    ${list.length===0?`<div class="empty">Inga uppdrag idag. Skapa ett nytt för att komma igång.</div>`:`<div class="cards" id="cardscroll">${cards}</div>`}
+    ${list.length===0?`<div class="empty">Inga pågående uppdrag.</div>`:`<div class="cards" id="cardscroll">${cards}</div>`}
   </div>
   ${vRadarSection()}
   ${vBottomNav('hem')}`;
@@ -1405,12 +1416,6 @@ function vStepKind(){
       <div class="method-list">
         <button class="tile row-tile ${!draft.kind?'off':''} ${draft.method==='manual'?'on':''}" data-act="set-method" data-method="manual">
           ${ICON.keyboard}<span class="t-text">Skapa manuellt</span>
-        </button>
-        <button class="tile row-tile off">
-          ${ICON.camera}<span class="t-text">Fotografera<span class="t-sub" style="display:block">Kommer snart</span></span>
-        </button>
-        <button class="tile row-tile off">
-          ${ICON.mic}<span class="t-text">Diktera med röst<span class="t-sub" style="display:block">Kommer snart</span></span>
         </button>
       </div>
     </div>
@@ -1704,6 +1709,7 @@ function vJobOversikt(job){
   const prog = checklistProgress(job.id);
   const insp = inspectionProgress(job.id);
   const t = materialTotals(job);
+  const eco = jobEconomySummary(job);
   const siteAddr = jobSiteAddressText(job);
 
   const sectionCard = (tab, icon, title, sub) => `
@@ -1741,10 +1747,10 @@ function vJobOversikt(job){
 
     <div class="section-cards">
       ${sectionCard('arbete', ICON.wrench, 'Arbete', job.loggedHours ? `${fmtHours(job.loggedHours)} arbetad tid` : (prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar'))}
-      ${sectionCard('material', ICON.box, 'Material', jobMaterials.length ? `${jobMaterials.length} artiklar` : 'Inga artiklar ännu')}
+      ${sectionCard('material', ICON.box, 'Material', (()=>{ const u=jobMaterials.filter(m=>m.kind!=='planned').length, p=jobMaterials.filter(m=>m.kind==='planned').length; return u||p ? [u?`${u} använda`:'',p?`${p} planerade`:''].filter(Boolean).join(' · ') : 'Inga artiklar ännu'; })())}
       ${sectionCard('dokumentation', ICON.camera, 'Dokumentation', jobPhotos.length ? `${jobPhotos.length} bilder` : 'Bilder, ritningar, dokument')}
       ${sectionCard('kontroll', ICON.gauge, 'Kontroll', insp.total ? `${insp.done} av ${insp.total} klara` : 'Egenkontroll ej påbörjad')}
-      ${sectionCard('ekonomi', ICON.calc, 'Pris & debitering', `Material ${fmtKr(t.total)}`)}
+      ${sectionCard('ekonomi', ICON.calc, 'Pris & debitering', `Totalt ${fmtKr(eco.subtotal)} exkl. moms`)}
       ${job.isQuote ? sectionCard('offert', ICON.sparkle, 'Offert', taxReductionType(job)==='rot'?'Preliminär kalkyl med ROT':taxReductionType(job)==='green'?'Preliminär kalkyl med Grön teknik':'Preliminär kalkyl') : ''}
     </div>
   </div>`;
@@ -1760,19 +1766,19 @@ function vJobArbete(job){
       <div class="row gap-xs"><input type="number" inputmode="decimal" value="${job.loggedHours||0}" data-field="job-logged-hours" style="flex:1"><span class="muted">h</span></div>
     </div>
     <div class="section">
-      <div class="subsection-title">Arbetsbeskrivning</div>
-      <textarea placeholder="Kort beskrivning av arbetet…" data-field="job-description">${esc(job.description||'')}</textarea>
+      <div class="subsection-title">Beställt arbete</div>
+      <textarea placeholder="Vad kunden ursprungligen beställde…" data-field="job-description">${esc(job.description||'')}</textarea>
     </div>
     <div class="section">
       ${vChecklistSection(job)}
     </div>
     <div class="section">
-      <div class="subsection-title">Ändringar / tillägg</div>
+      <div class="subsection-title">Tillägg & ändringar</div>
       <textarea placeholder="Nya kundönskemål eller ändringar mot ursprunglig plan…" data-field="job-changes">${esc(job.changes||'')}</textarea>
     </div>
     <div class="section">
-      <div class="subsection-title">Anteckningar</div>
-      <textarea placeholder="Fria anteckningar…" data-field="job-notes">${esc(job.notes||'')}</textarea>
+      <div class="subsection-title">Dagbok</div>
+      <textarea placeholder="Vad gjordes, vad upptäcktes och vad behöver följas upp?" data-field="job-notes">${esc(job.notes||'')}</textarea>
     </div>
   </div>`;
 }
@@ -1794,9 +1800,9 @@ function vJobMaterial(job){
         <div class="material-sub">${[m.eNr?('E-nr '+esc(m.eNr)):'', esc(m.qty)+' '+esc(m.unit), m.description?esc(m.description):''].filter(Boolean).join(' · ')}</div>
       </div>
       <div class="material-cols">
-        <div><div class="lbl">Mitt pris</div><div>${fmtKr(myPrice)}</div></div>
+        <div><div class="lbl">Inköpspris</div><div>${fmtKr(myPrice)}</div></div>
         <div><div class="lbl">Påslag</div><div class="mat-markup-val">${fmtKr(markupAmt)}</div></div>
-        <div><div class="lbl">Kund</div><div class="bold mat-customer-val">${fmtKr(customerPrice)}</div></div>
+        <div><div class="lbl">Kundpris</div><div class="bold mat-customer-val">${fmtKr(customerPrice)}</div></div>
       </div>
       <button class="material-del" data-act="delete-material" data-id="${m.id}">${ICON.trash}</button>
     </div>`;
@@ -1869,17 +1875,6 @@ function vJobDokumentation(job){
     <div class="section">
       <div class="subsection-title">Bilder</div>
       ${photosHtml}
-    </div>
-    <div class="section">
-      <div class="actions-row">
-        <button class="tile row-tile off">${ICON.folder}<span class="t-text">Ritningar<span class="t-sub" style="display:block">Kommer snart</span></span></button>
-      </div>
-      <div class="actions-row" style="margin-top:12px">
-        <button class="tile row-tile off">${ICON.save}<span class="t-text">Dokument<span class="t-sub" style="display:block">Kommer snart</span></span></button>
-      </div>
-      <div class="actions-row" style="margin-top:12px">
-        <button class="tile row-tile off">${ICON.calc}<span class="t-text">Mätvärden<span class="t-sub" style="display:block">Kommer snart</span></span></button>
-      </div>
     </div>
   </div>`;
 }
@@ -2007,7 +2002,7 @@ function vJobAvsluta(job){
     { label:'Material', ok: usedCount>0, okText:`${usedCount} artiklar`, badText:'Inga artiklar registrerade' },
     { label:'Bilder', ok: jobPhotos.length>0, okText:`${jobPhotos.length} bilder`, badText:'Inga bilder' },
     { label:'Egenkontroll', ok: insp.total>0 && insp.done===insp.total, okText:'Klar', badText: insp.total ? `${insp.total-insp.done} punkter kvar` : 'Ingen kontroll påbörjad' },
-    { label:'Anteckningar', ok: !!(job.notes&&job.notes.trim()), okText:'Ifyllda', badText:'Inga anteckningar' }
+    { label:'Dagbok', ok: !!(job.notes&&job.notes.trim()), okText:'Ifylld', badText:'Ingen dagbok' }
   ];
   const rows = items.map(it=>`
     <div class="checklist-row">
@@ -2066,7 +2061,7 @@ function buildJobReport(job){
   lines.push('EKONOMI (exkl. moms)');
   lines.push(`Arbetskostnad: ${fmtKr(eco.labor)}`);
   lines.push(`Material: ${fmtKr(eco.material.cost)}`);
-  lines.push(`Körkostnad: ${fmtKr(eco.travel)}`);
+  lines.push(`Resa & framkörning: ${fmtKr(eco.travel)}`);
   lines.push(`Totalt: ${fmtKr(eco.subtotal)}`);
   return { subject: `Rapport – ${job.title}`, body: lines.join('\n') };
 }
@@ -2083,8 +2078,7 @@ function vJobFaktura(job){
       <div class="row between" style="margin-top:8px"><span class="muted">Arbetskostnad (${fmtKr(job.hourlyRate||625)}/h${job.multiRatesEnabled?' + tidskanaler':''})</span><span class="bold">${fmtKr(eco.labor)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Material (${usedRows.length} artiklar)</span><span class="bold">${fmtKr(eco.material.cost)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Påslag material (${job.markupPercent}%)</span><span class="bold">${fmtKr(eco.material.markupSum)}</span></div>
-      <div class="row between" style="margin-top:8px"><span class="muted">Körkostnad (${job.travelMode==='km'?'km-ersättning':'framkörning'})</span><span class="bold">${fmtKr(eco.travel)}</span></div>
-      <div class="row between" style="margin-top:8px"><span class="muted">Övriga kostnader</span><span class="muted">Kommer snart</span></div>
+      <div class="row between" style="margin-top:8px"><span class="muted">Resa & framkörning (${job.travelMode==='km'?'km-ersättning':'framkörning'})</span><span class="bold">${fmtKr(eco.travel)}</span></div>
       <div class="summary-total"><span>Totalt (exkl. moms)</span><span>${fmtKr(eco.subtotal)}</span></div>
     </div>
 
@@ -2103,10 +2097,6 @@ function vJobFaktura(job){
       <div style="margin-top:10px">
         <button class="tile row-tile" data-act="ai-job-summary" data-id="${job.id}">${ICON.sparkle}<span class="t-text">${st.aiSummaryLoading?'Tänker…':'Skapa AI-förslag'}<span class="t-sub" style="display:block">${getAiKey()?'Baserat på beskrivning, att göra och egenkontroll':'Kräver API-nyckel i Inställningar'}</span></span></button>
       </div>
-    </div>
-
-    <div class="section">
-      <button class="tile row-tile off">${ICON.cart}<span class="t-text">Exportera till Fortnox<span class="t-sub" style="display:block">Kommer snart</span></span></button>
     </div>
 
     ${job.status!=='invoiced' ? `<div style="margin-top:16px"><button class="primary-btn" style="width:100%" data-act="mark-invoiced" data-id="${job.id}">Markera som fakturerat</button></div>` : `<p class="empty" style="margin-top:16px">Fakturerat.</p>`}
@@ -2641,13 +2631,13 @@ function vSettingsPrices(){
       </div>
     </div>
     <div class="settings-body">
-      <p class="settings-note">Standardpriser som nya projekt kopieras med. Ändrar du dem här påverkas inte projekt som redan finns — varje projekt har egna priser under Ekonomi → Priser.</p>
+      <p class="settings-note">Standardpriser som nya projekt kopieras med. Ändrar du dem här påverkas inte projekt som redan finns — varje projekt har egna priser under Pris & debitering.</p>
       <div class="field" style="margin-top:16px">
         <span class="label">Grundtimpris (exkl. moms)</span>
         <div class="row gap-xs"><input type="number" inputmode="decimal" value="${d.hourlyRate}" data-field="def-hourly-rate" style="flex:1"><span class="muted">kr/h</span></div>
       </div>
       <div class="field" style="margin-top:16px">
-        <span class="label">Körkostnad</span>
+        <span class="label">Resa & framkörning</span>
         <div class="kind-row" style="margin-top:8px">
           <button class="tile ${d.travelMode==='fixed'?'on':''}" data-act="set-def-travel-mode" data-mode="fixed"><span>Framkörningsavgift</span></button>
           <button class="tile ${d.travelMode==='km'?'on':''}" data-act="set-def-travel-mode" data-mode="km"><span>Kilometerersättning</span></button>
