@@ -44,15 +44,24 @@
       .sort((a,b)=>new Date(a.plannedAt)-new Date(b.plannedAt));
   }
   function activeJobsV44(){ return jobs.filter(j=>!['done','invoice_ready','invoiced'].includes(j.status)); }
+  function missingRotJobsV51(){
+    if(typeof rotDetailsState!=='function'||typeof taxReductionType!=='function') return [];
+    return activeJobsV44().filter(j=>!j.isQuote&&taxReductionType(j)==='rot'&&!rotDetailsState(j).complete);
+  }
   function recommendationV44(){
     const today=todayJobsV44();
     const rad=activeRadarItems();
+    const rotMissing=missingRotJobsV51();
     const waiting=activeJobsV44().filter(j=>j.status==='waiting');
     if(today.length){
       const j=today[0];
       return {title:`Nästa: ${j.title}`,sub:`${fmtTimeRange(j.plannedAt)}${customerOf(j)?' · '+customerOf(j).name:''}`};
     }
     if(rad.length) return {title:`${rad.length} ${rad.length===1?'sak':'saker'} att agera på`,sub:rad[0].text};
+    if(rotMissing.length){
+      const j=rotMissing[0];
+      return {title:'ROT-uppgifter saknas',sub:`${j.title}${customerOf(j)?' · '+customerOf(j).name:''}`};
+    }
     if(waiting.length) return {title:`${waiting.length} jobb väntar`,sub:'Kolla om något kan drivas vidare idag.'};
     return {title:'Läget ser lugnt ut',sub:'Inga registrerade saker kräver uppmärksamhet just nu.'};
   }
@@ -97,9 +106,14 @@
     return `<div class="home-v44-list">${list.map(j=>{const c=customerOf(j);return `<button class="home-v44-row" data-act="open-job" data-id="${j.id}"><span style="color:var(--accent)">${ICON.clock}</span><span class="home-v44-row-main"><span class="home-v44-row-title">${esc(j.title)}</span><span class="home-v44-row-sub">${esc(fmtTimeRange(j.plannedAt))}${c?' · '+esc(c.name):''}</span></span>${ICON.chevronRight}</button>`}).join('')}</div>`;
   }
   function vActionsV44(){
-    const list=activeRadarItems().slice(0,3);
-    if(!list.length) return '<div class="stats-empty-v44">Inget akut på Radarn.</div>';
-    return `<div class="home-v44-list">${list.map(r=>`<button class="home-v44-row" data-act="open-radar"><span style="color:var(--accent)">${ICON.sparkle}</span><span class="home-v44-row-main"><span class="home-v44-row-title">${esc(r.text)}</span><span class="home-v44-row-sub">På radarn</span></span>${ICON.chevronRight}</button>`).join('')}</div>`;
+    const radarRows=activeRadarItems().slice(0,3);
+    const rotRows=missingRotJobsV51().slice(0,Math.max(0,3-radarRows.length));
+    if(!radarRows.length&&!rotRows.length) return '<div class="stats-empty-v44">Inget akut att agera på.</div>';
+    const rows=[
+      ...radarRows.map(r=>`<button class="home-v44-row" data-act="open-radar"><span style="color:var(--accent)">${ICON.sparkle}</span><span class="home-v44-row-main"><span class="home-v44-row-title">${esc(r.text)}</span><span class="home-v44-row-sub">På radarn</span></span>${ICON.chevronRight}</button>`),
+      ...rotRows.map(j=>`<button class="home-v44-row" data-act="open-job" data-id="${j.id}" data-tab="rot"><span style="color:var(--accent)">${ICON.user}</span><span class="home-v44-row-main"><span class="home-v44-row-title">Komplettera ROT-uppgifter</span><span class="home-v44-row-sub">${esc(j.title)}</span></span>${ICON.chevronRight}</button>`)
+    ];
+    return `<div class="home-v44-list">${rows.join('')}</div>`;
   }
   function vRecentV44(){
     const list=recentJobsV44();
