@@ -1371,6 +1371,9 @@ function draftCustomerAddress(){
   if(draft.existingCustomerId){ const c=customers.find(x=>x.id===draft.existingCustomerId); return c?(c.address||''):''; }
   return draft.newCustomer.address.trim();
 }
+function draftUsesCustomerAddress(){
+  return !!(draft.worksite.useCustomerAddress && draftCustomerAddress());
+}
 
 /* ================= Render: opening ================= */
 function vOpening(){
@@ -1727,8 +1730,8 @@ function customerMissing(){
 
 /* ================= Render: step arbetsplats (NY) ================= */
 function vStepWorksite(){
-  const useCustomer = draft.worksite.useCustomerAddress && !!draftCustomerAddress();
   const custAddr = draftCustomerAddress();
+  const useCustomer = draftUsesCustomerAddress();
   return `
   ${vWizHeader('Arbetsplats', false, 1, 4)}
   <div class="wiz-body">
@@ -1737,7 +1740,7 @@ function vStepWorksite(){
         <div>Samma adress som kund</div>
         ${custAddr?`<div class="muted" style="font-size:12px;margin-top:2px">${esc(custAddr)}</div>`:'<div class="muted" style="font-size:12px;margin-top:2px">Ingen kundadress angiven</div>'}
       </div>
-      <button class="switch ${useCustomer?'on':''}" data-act="toggle-use-customer-address"><div class="knob"></div></button>
+      <button class="switch ${useCustomer?'on':''}" data-act="toggle-use-customer-address" ${custAddr?'':'disabled'} aria-disabled="${custAddr?'false':'true'}"><div class="knob"></div></button>
     </div>
     ${useCustomer?'':`
     <div class="field"><span class="label">Adress *</span><input type="text" placeholder="Gatuadress" value="${esc(draft.worksite.address)}" data-field="ws.address"></div>
@@ -1748,11 +1751,11 @@ function vStepWorksite(){
   </div>`;
 }
 function worksiteMissing(){
-  if(draft.worksite.useCustomerAddress) return [];
+  if(draftUsesCustomerAddress()) return [];
   const m=[]; if(!draft.worksite.address.trim()) m.push('Adress'); return m;
 }
 function draftSiteAddressText(){
-  return draft.worksite.useCustomerAddress ? draftCustomerAddress()
+  return draftUsesCustomerAddress() ? draftCustomerAddress()
     : [draft.worksite.address, draft.worksite.postalCode, draft.worksite.city].filter(Boolean).join(', ');
 }
 
@@ -1864,7 +1867,7 @@ function vWizFooter(){
   if(st.step===0) return '';
   if(st.step===1){
     const m=customerMissing();
-    return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Spara kund & fortsätt</button></div>`;
+    return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Fortsätt</button></div>`;
   }
   if(st.step===2){
     const m=worksiteMissing();
@@ -3317,7 +3320,7 @@ $app.addEventListener('input', e=>{
       const formatted=formatCustomerPhone(value);
       if(formatted!==value){ value=formatted; t.value=formatted; }
     }
-    if(f==='nc.postalCode'){
+    if(f==='nc.postalCode'||f==='nc.invoicePostalCode'){
       const formatted=formatCustomerPostalCode(value);
       if(formatted!==value){ value=formatted; t.value=formatted; }
     }
@@ -3325,7 +3328,16 @@ $app.addEventListener('input', e=>{
     if(f==='nc.name'||f==='nc.address') patchWizFooter();
     return;
   }
-  if(f.startsWith('ws.')){ draft.worksite[f.slice(3)]=t.value; if(f==='ws.address') patchWizFooter(); return; }
+  if(f.startsWith('ws.')){
+    let value=t.value;
+    if(f==='ws.postalCode'){
+      const formatted=formatCustomerPostalCode(value);
+      if(formatted!==value){ value=formatted; t.value=formatted; }
+    }
+    draft.worksite[f.slice(3)]=value;
+    if(f==='ws.address') patchWizFooter();
+    return;
+  }
   if(f==='title'){ draft.title=t.value; patchWizFooter(); return; }
   if(f==='description'){ draft.description=t.value; return; }
   if(f==='plannedDate'){ draft.plannedDate=t.value; return; }
@@ -3740,7 +3752,7 @@ $app.addEventListener('click', async e=>{
       customerId, kind: draft.kind||'customer_job', title: draft.title.trim(), workType: draft.workType,
       description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority,
       isQuote: draft.isQuote,
-      siteUsesCustomerAddress: draft.worksite.useCustomerAddress,
+      siteUsesCustomerAddress: draftUsesCustomerAddress(),
       siteAddress: draft.worksite.address.trim()||null,
       sitePostalCode: draft.worksite.postalCode.trim()||null,
       siteCity: draft.worksite.city.trim()||null
@@ -3762,8 +3774,6 @@ $app.addEventListener('click', async e=>{
   }
 
   /* ---- materiallista: registrera-panel ---- */
-  if(a==='open-mat-panel'){
-    st.matPanel=true; st.matPanelMode='browse'; st.matTab=st.matTab||'recent'; st.matSearch=''; st.matDraft={};
   if(a==='search-material-mention'){
     const job=jobById(st.id); if(!job) return;
     const i=Number(b.dataset.index), m=(job.materialMentions||[])[i]; if(!m) return;
@@ -3774,6 +3784,8 @@ $app.addEventListener('click', async e=>{
     const i=Number(b.dataset.index); job.materialMentions=(job.materialMentions||[]).filter((_,idx)=>idx!==i);
     job.updatedAt=new Date().toISOString(); await dbPut('jobs',job); return render();
   }
+  if(a==='open-mat-panel'){
+    st.matPanel=true; st.matPanelMode='browse'; st.matTab=st.matTab||'recent'; st.matSearch=''; st.matDraft={};
     pushNav();
     render();
     if(!catalog){
