@@ -88,7 +88,7 @@
     if(!el) return;
     e.preventDefault(); e.stopPropagation();
     const act=el.dataset.v66, s=ensureState();
-    const job=st.jobId ? jobById(st.jobId) : null;
+    const job=st.id ? jobById(st.id) : null;
     if(!job) return;
     if(act==='open-measure'){ s.mode='measure'; render(); return; }
     if(act==='open-note'){ s.mode='note'; render(); return; }
