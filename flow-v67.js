@@ -68,6 +68,9 @@
   if(typeof oldOverview==='function'){
     window.vJobOversikt=function(job){
       let html=oldOverview(job);
+      // Den gamla separata huvudknappen tas bort här för att inte dubblera
+      // "Jobba med uppdraget". Funktionerna finns kvar i det nya trefasflödet.
+      html=html.replace(/<div style="margin-top:20px">[\s\S]*?<\/div>\s*(?=\s*<div class="section">|\s*<div class="card"|\s*<div class="section-cards">)/,'');
       const cls=st.flowV67More?'job-body flow67-job flow67-more':'job-body flow67-job';
       html=html.replace('<div class="job-body">','<div class="'+cls+'">');
       const marker='<div class="card">';
