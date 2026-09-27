@@ -12,7 +12,7 @@
 
   async function cleanupKnownDemoV62(){
     try{
-      if(typeof dbAll!=='function' || typeof dbDelete!=='function') return;
+      if(typeof dbAll!=='function' || typeof dbDel!=='function') return;
 
       const allJobs=await dbAll('jobs');
       const allCustomers=await dbAll('customers');
@@ -29,8 +29,8 @@
       const onlyKnownDemoJobs=linked.length>0 && linked.every(j=>demoTitles.has(j.title));
       if(!onlyKnownDemoJobs) return; // säkerhet: rör inte kunden om andra jobb finns kopplade.
 
-      for(const j of linked){ await dbDelete('jobs',j.id); }
-      await dbDelete('customers',demoCustomer.id);
+      for(const j of linked){ await dbDel('jobs',j.id); }
+      await dbDel('customers',demoCustomer.id);
 
       if(Array.isArray(jobs)) jobs=jobs.filter(j=>!linked.some(d=>d.id===j.id));
       if(Array.isArray(customers)) customers=customers.filter(c=>c.id!==demoCustomer.id);
