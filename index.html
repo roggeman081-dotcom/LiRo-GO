@@ -3999,7 +3999,7 @@ $app.addEventListener('click', async e=>{
     checklist = await dbAll('checklist');
     inspection = await dbAll('inspection');
     radar = await dbAll('radar');
-    await seedDemoIfEmpty();
+    // Produktion: skapa aldrig demo-/fejkjobb automatiskt.
   }catch(err){ console.error('Kunde inte öppna lagring', err); }
   loadCachedIcalEvents();
   render();
