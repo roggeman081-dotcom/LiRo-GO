@@ -95,8 +95,10 @@ jobs:
             await page.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:10000 });
 
             const body = await page.locator('body').innerText();
-            for (const label of ['Hem','Projekt','Radar','Mer']) {
-              if (!body.includes(label)) throw new Error('Bottenmeny saknar ' + label);
+            for (const act of ['nav-home','nav-projects','open-radar','open-settings']) {
+              if (await page.locator(`.bottomnav [data-act="${act}"]`).count() !== 1) {
+                throw new Error('Bottenmeny saknar action ' + act);
+              }
             }
             if (!body.includes('Materialvinst')) throw new Error('Smarta startsidan laddades inte');
 
