@@ -54,6 +54,22 @@ jobs:
           ];
           for (const s of required) if (!html.includes(s)) throw new Error('Regression-skydd saknas: ' + s);
 
+          const backup = fs.readFileSync('backup-v64.js','utf8');
+          if (!backup.includes("'checklist'") || !backup.includes("'radar'") || backup.includes("'checklists'")) throw new Error('Backupens store-lista är fel');
+          if (!backup.includes("SECRET_STORAGE_KEYS") || !backup.includes("lirogo_ai_key")) throw new Error('Backupen skyddar inte AI-nyckeln');
+
+          const noDemo = fs.readFileSync('no-demo-v62.js','utf8');
+          if (!noDemo.includes("dbDel('jobs'") || noDemo.includes('dbDelete(')) throw new Error('Demo-städningen använder fel databasfunktion');
+          if (html.includes('await seedDemoIfEmpty();')) throw new Error('Kärnappen seedar fortfarande demodata');
+
+          const home = fs.readFileSync('home-v44.js','utf8');
+          const be = fs.readFileSync('break-even-v57.js','utf8');
+          if (!home.includes('statsDirtyV44')) throw new Error('Startsidan saknar invalidation av materialstatistik');
+          if (!be.includes('materialsDirtyV57')) throw new Error('Break-even saknar invalidation efter materialändring');
+
+          const customerReport = fs.readFileSync('customer-report-v58.js','utf8');
+          if (!customerReport.includes('measurementsV66') || !customerReport.includes('MÄTVÄRDEN')) throw new Error('Kundrapporten saknar mätvärden');
+
           console.log(JSON.stringify({ ok:true, jsFiles:jsFiles.length, inlineScripts:inline.length, cache:cache[1], precacheFiles:refs.length }, null, 2));
           NODE
 
