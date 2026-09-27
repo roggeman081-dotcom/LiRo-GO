@@ -1350,7 +1350,7 @@ window.addEventListener('popstate', async ()=>{ await closeTopLayer(); render();
 
 function emptyDraft(){
   return { kind:null, method:null, existingCustomerId:null,
-    newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:true,
+    newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:false,
       isCompany:false,orgNumber:'',invoiceAddress:'',invoicePostalCode:'',invoiceCity:'',invoiceReference:'',glnNumber:''},
     worksite:{useCustomerAddress:true, address:'', postalCode:'', city:''},
     title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal', isQuote:false,
@@ -1690,7 +1690,7 @@ function vStepCustomer(){
     <div class="field"><span class="label">Namn *</span><input type="text" placeholder="För- och efternamn / företag" value="${esc(draft.newCustomer.name)}" data-field="nc.name"></div>
     <div class="field"><span class="label">Telefon</span><input type="tel" placeholder="070-123 45 67" value="${esc(draft.newCustomer.phone)}" data-field="nc.phone"></div>
     <div class="field"><span class="label">E-post</span><input type="email" placeholder="namn@exempel.se" value="${esc(draft.newCustomer.email)}" data-field="nc.email"></div>
-    <div class="field"><span class="label">Adress *</span><input type="text" placeholder="Gatuadress" value="${esc(draft.newCustomer.address)}" data-field="nc.address"></div>
+    <div class="field"><span class="label">Adress <span style="font-weight:400">(valfritt)</span></span><input type="text" placeholder="Gatuadress" value="${esc(draft.newCustomer.address)}" data-field="nc.address" autocomplete="street-address"></div>
     <div class="field field-row">
       <div><span class="label">Postnummer</span><input type="text" placeholder="123 45" value="${esc(draft.newCustomer.postalCode)}" data-field="nc.postalCode"></div>
       <div><span class="label">Ort</span><input type="text" placeholder="Ort" value="${esc(draft.newCustomer.city)}" data-field="nc.city"></div>
@@ -1722,12 +1722,12 @@ function vSearchResults(results){
 }
 function customerMissing(){
   if(draft.existingCustomerId) return [];
-  const m=[]; if(!draft.newCustomer.name.trim()) m.push('Namn'); if(!draft.newCustomer.address.trim()) m.push('Adress'); return m;
+  const m=[]; if(!draft.newCustomer.name.trim()) m.push('Namn'); return m;
 }
 
 /* ================= Render: step arbetsplats (NY) ================= */
 function vStepWorksite(){
-  const useCustomer = draft.worksite.useCustomerAddress;
+  const useCustomer = draft.worksite.useCustomerAddress && !!draftCustomerAddress();
   const custAddr = draftCustomerAddress();
   return `
   ${vWizHeader('Arbetsplats', false, 1, 4)}
@@ -1864,7 +1864,7 @@ function vWizFooter(){
   if(st.step===0) return '';
   if(st.step===1){
     const m=customerMissing();
-    return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Nästa</button></div>`;
+    return `<div class="wiz-footer">${m.length?`<span class="missing">Saknas: ${m.join(', ')}</span>`:''}<button class="primary-btn" data-act="wiz-next" ${m.length?'disabled':''}>Spara kund & fortsätt</button></div>`;
   }
   if(st.step===2){
     const m=worksiteMissing();
@@ -3283,6 +3283,17 @@ function render(){
   }
 }
 
+/* ================= Kundfält v68 ================= */
+function formatCustomerPhone(value){
+  const digits=String(value||'').replace(/\D/g,'');
+  if(/^07\d{8}$/.test(digits)) return digits.slice(0,3)+'-'+digits.slice(3,6)+' '+digits.slice(6,8)+' '+digits.slice(8,10);
+  return value;
+}
+function formatCustomerPostalCode(value){
+  const digits=String(value||'').replace(/\D/g,'').slice(0,5);
+  return digits.length>3 ? digits.slice(0,3)+' '+digits.slice(3) : digits;
+}
+
 /* ================= Events ================= */
 $app.addEventListener('keydown', e=>{
   if(e.key==='Enter' && e.target.dataset.field==='radar-draft'){
@@ -3300,7 +3311,20 @@ $app.addEventListener('input', e=>{
     if(box) box.innerHTML = vSearchResults(results);
     return;
   }
-  if(f.startsWith('nc.')){ draft.newCustomer[f.slice(3)]=t.value; if(f==='nc.name'||f==='nc.address') patchWizFooter(); return; }
+  if(f.startsWith('nc.')){
+    let value=t.value;
+    if(f==='nc.phone'){
+      const formatted=formatCustomerPhone(value);
+      if(formatted!==value){ value=formatted; t.value=formatted; }
+    }
+    if(f==='nc.postalCode'){
+      const formatted=formatCustomerPostalCode(value);
+      if(formatted!==value){ value=formatted; t.value=formatted; }
+    }
+    draft.newCustomer[f.slice(3)]=value;
+    if(f==='nc.name'||f==='nc.address') patchWizFooter();
+    return;
+  }
   if(f.startsWith('ws.')){ draft.worksite[f.slice(3)]=t.value; if(f==='ws.address') patchWizFooter(); return; }
   if(f==='title'){ draft.title=t.value; patchWizFooter(); return; }
   if(f==='description'){ draft.description=t.value; return; }
