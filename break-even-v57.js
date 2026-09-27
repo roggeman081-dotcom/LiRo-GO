@@ -144,8 +144,11 @@
   const oldAfter=afterHome;
   afterHome=function(){
     try{ oldAfter(); }catch{}
-    loadV57(false);
+    loadV57(true);
   };
+
+  window.addEventListener('focus',()=>loadV57(true));
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) loadV57(true); });
 
   document.addEventListener('click',function(e){
     const b=e.target.closest('[data-act="edit-break-even-v57"]');
