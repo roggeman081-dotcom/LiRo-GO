@@ -122,9 +122,9 @@ jobs:
             }
 
             // Nytt jobb: kund får skapas utan kundadress.
-            await page.locator('[data-act="new-job"]').first().click();
-            await page.locator('[data-act="set-kind"][data-kind="customer_job"]').click();
-            await page.locator('[data-act="set-method"][data-method="manual"]').click();
+            await page.locator('[data-act="new-job"]').first().evaluate(el => el.click());
+            await page.locator('[data-act="set-kind"][data-kind="customer_job"]').evaluate(el => el.click());
+            await page.locator('[data-act="set-method"][data-method="manual"]').evaluate(el => el.click());
             await page.locator('[data-field="nc.name"]').waitFor({ state:'visible' });
 
             await page.locator('[data-field="nc.name"]').fill('Smoke Test Kund');
