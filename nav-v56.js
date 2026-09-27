@@ -8,6 +8,7 @@
   style.textContent=`
     body.liro-v56-nav .bottomnav{z-index:70}
     body.liro-v56-nav .fab-wrap{z-index:71}
+    body.liro-v56-no-fab .fab-wrap{display:none!important}
     body.liro-v56-nav .job-body,
     body.liro-v56-nav .wiz-body,
     body.liro-v56-nav .settings-body,
@@ -36,7 +37,9 @@
 
   function ensureNavV56(){
     const show=shouldShowNavV56();
+    const hideFab=st?.view==='job';
     document.body.classList.toggle('liro-v56-nav',show);
+    document.body.classList.toggle('liro-v56-no-fab',show&&hideFab);
     if(!show) return;
 
     const active=navActiveV56();
