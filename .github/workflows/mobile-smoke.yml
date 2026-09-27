@@ -6,31 +6,73 @@ on:
     paths:
       - '.github/workflows/mobile-smoke.yml'
       - 'index.html'
-      - 'home-v44.js'
-      - 'home-v44-safe.js'
-      - 'sw.js'
+      - '*.js'
+      - 'manifest.webmanifest'
   workflow_dispatch:
 
 jobs:
   mobile-webkit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+
+      - name: Static JavaScript and PWA checks
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const jsFiles = fs.readdirSync('.').filter(f => f.endsWith('.js'));
+          for (const file of jsFiles) {
+            const src = fs.readFileSync(file, 'utf8');
+            new Function(src);
+          }
+
+          const html = fs.readFileSync('index.html', 'utf8');
+          const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]);
+          if (!inline.length) throw new Error('Ingen inline-JavaScript hittades i index.html');
+          inline.forEach(src => new Function(src));
+
+          const sw = fs.readFileSync('sw.js', 'utf8');
+          const cache = sw.match(/const CACHE\s*=\s*['"]([^'"]+)['"]/);
+          if (!cache) throw new Error('Service worker saknar CACHE-version');
+          const filesBlock = sw.match(/const FILES\s*=\s*\[([\s\S]*?)\];/);
+          if (!filesBlock) throw new Error('Service worker saknar FILES-lista');
+          const refs = [...filesBlock[1].matchAll(/['"]\.\/([^'"]+)['"]/g)].map(m => m[1]).filter(Boolean);
+          for (const ref of refs) {
+            if (!fs.existsSync(ref)) throw new Error('Service worker refererar till fil som saknas: ' + ref);
+          }
+
+          const required = [
+            "function draftUsesCustomerAddress()",
+            "siteUsesCustomerAddress: draftUsesCustomerAddress()",
+            "if(a==='search-material-mention')",
+            "if(a==='dismiss-material-mention')"
+          ];
+          for (const s of required) if (!html.includes(s)) throw new Error('Regression-skydd saknas: ' + s);
+
+          console.log(JSON.stringify({ ok:true, jsFiles:jsFiles.length, inlineScripts:inline.length, cache:cache[1], precacheFiles:refs.length }, null, 2));
+          NODE
+
       - name: Install Playwright and static server
         run: |
           npm init -y >/dev/null 2>&1
           npm install playwright@latest http-server@latest
           npx playwright install --with-deps webkit
-      - name: Run iPhone-like WebKit test
+
+      - name: Run iPhone-like WebKit regression flow
         run: |
           npx http-server . -p 4173 -c-1 >/tmp/liro-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
-          for i in {1..30}; do curl -fsS http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 1
+          done
+
           node <<'NODE'
           const { webkit, devices } = require('playwright');
           (async() => {
@@ -41,43 +83,110 @@ jobs:
             page.on('pageerror', e => errors.push('pageerror: ' + e.message));
             page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-            const url = 'http://127.0.0.1:4173/';
-            const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
-            if (!response || !response.ok()) throw new Error('Appen svarade inte OK: ' + (response && response.status()));
+            const response = await page.goto('http://127.0.0.1:4173/', { waitUntil:'networkidle', timeout:45000 });
+            if (!response || !response.ok()) throw new Error('Appen svarade inte OK');
 
             await page.evaluate(async () => {
               if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
             });
-            await page.reload({ waitUntil: 'networkidle' });
-            await page.waitForTimeout(1200);
+            await page.reload({ waitUntil:'networkidle', timeout:45000 });
+
+            // Vänta på riktig startsida – inte en fast timeout som kan råka träffa öppningsanimationen.
+            await page.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:10000 });
 
             const body = await page.locator('body').innerText();
-            if (!body.includes('LiRo rekommenderar')) throw new Error('Nya startsidan syns inte efter PWA-reload');
-            if (!body.includes('Materialvinst')) throw new Error('Materialvinst saknas på startsidan');
-
-            const stats = page.locator('[data-act="open-stats-v44"]').first();
-            if (await stats.count() !== 1) throw new Error('Statistikknappen hittades inte');
-            await stats.click();
-            await page.waitForTimeout(500);
-            const body2 = await page.locator('body').innerText();
-            if (!body2.includes('Statistik')) throw new Error('Statistikvyn öppnades inte');
-
             for (const label of ['Hem','Projekt','Radar','Mer']) {
               if (!body.includes(label)) throw new Error('Bottenmeny saknar ' + label);
             }
+            if (!body.includes('Materialvinst')) throw new Error('Smarta startsidan laddades inte');
 
-            const sw = await page.evaluate(async () => {
-              if (!('serviceWorker' in navigator)) return { supported:false };
+            // PWA/cache ska matcha aktuell version i sw.js.
+            const swState = await page.evaluate(async () => {
               const reg = await navigator.serviceWorker.getRegistration();
               const cacheKeys = await caches.keys();
-              return { supported:true, active: !!reg?.active, scriptURL: reg?.active?.scriptURL || null, cacheKeys };
+              const swText = await (await fetch('./sw.js', { cache:'no-store' })).text();
+              const m = swText.match(/const CACHE\s*=\s*['"]([^'"]+)['"]/);
+              return { active:!!reg?.active, cacheKeys, expected:m?.[1] || null };
             });
-            if (!sw.active) throw new Error('Service worker blev inte aktiv');
-            if (!sw.cacheKeys.includes('lirogo-v45')) throw new Error('lirogo-v45 saknas i cache');
+            if (!swState.active) throw new Error('Service worker blev inte aktiv');
+            if (!swState.expected || !swState.cacheKeys.includes(swState.expected)) {
+              throw new Error('Aktuell PWA-cache saknas: ' + JSON.stringify(swState));
+            }
+
+            // Statistik ska öppna.
+            const stats = page.locator('[data-act="open-stats-v44"]').first();
+            if (await stats.count() !== 1) throw new Error('Statistikknappen hittades inte');
+            await stats.click();
+            await page.getByText('Statistik', { exact:true }).first().waitFor({ state:'visible', timeout:5000 });
+            await page.goBack();
+            await page.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:5000 });
+
+            // Nytt jobb: kund får skapas utan kundadress.
+            await page.locator('[data-act="new-job"]').first().click();
+            await page.locator('[data-act="set-kind"][data-kind="customer_job"]').click();
+            await page.locator('[data-act="set-method"][data-method="manual"]').click();
+            await page.locator('[data-field="nc.name"]').waitFor({ state:'visible' });
+
+            await page.locator('[data-field="nc.name"]').fill('Smoke Test Kund');
+            await page.locator('[data-field="nc.phone"]').fill('0701234567');
+            const formattedPhone = await page.locator('[data-field="nc.phone"]').inputValue();
+            if (formattedPhone !== '070-123 45 67') throw new Error('Telefon formaterades inte: ' + formattedPhone);
+
+            const customerNext = page.locator('.wiz-footer [data-act="wiz-next"]');
+            if (await customerNext.isDisabled()) throw new Error('Kundsteget kräver fortfarande adress');
+            await customerNext.click();
+
+            // Utan kundadress måste arbetsplats krävas och "samma adress" får inte kunna vara aktiv.
+            await page.locator('[data-field="ws.address"]').waitFor({ state:'visible' });
+            const workNext = page.locator('.wiz-footer [data-act="wiz-next"]');
+            if (!(await workNext.isDisabled())) throw new Error('Arbetsplatsadress krävs inte trots saknad kundadress');
+            const sameAddressSwitch = page.locator('[data-act="toggle-use-customer-address"]');
+            if (!(await sameAddressSwitch.isDisabled())) throw new Error('Samma kundadress går att välja trots att kundadress saknas');
+
+            await page.locator('[data-field="ws.address"]').fill('Testgatan 1');
+            await page.locator('[data-field="ws.postalCode"]').fill('25220');
+            await page.locator('[data-field="ws.city"]').fill('Helsingborg');
+            const wsPost = await page.locator('[data-field="ws.postalCode"]').inputValue();
+            if (wsPost !== '252 20') throw new Error('Arbetsplatsens postnummer formaterades inte: ' + wsPost);
+            if (await workNext.isDisabled()) throw new Error('Arbetsplatssteget låstes inte upp efter adress');
+            await workNext.click();
+
+            await page.locator('[data-field="title"]').fill('Smoke Test Uppdrag');
+            await page.locator('.wiz-footer [data-act="wiz-next"]').click();
+
+            const summary = await page.locator('body').innerText();
+            if (!summary.includes('Testgatan 1')) throw new Error('Arbetsplatsadressen saknas i sammanfattningen');
+            await page.locator('[data-act="wiz-submit"]').click();
+            await page.getByText('Smoke Test Uppdrag', { exact:true }).first().waitFor({ state:'visible', timeout:5000 });
+
+            // Kontrollera den faktiskt sparade datan, inte bara UI.
+            const saved = await page.evaluate(() => {
+              const j = jobs.find(x => x.title === 'Smoke Test Uppdrag');
+              return j ? { siteUsesCustomerAddress:j.siteUsesCustomerAddress, siteAddress:j.siteAddress, sitePostalCode:j.sitePostalCode } : null;
+            });
+            if (!saved) throw new Error('Testuppdraget sparades inte');
+            if (saved.siteUsesCustomerAddress !== false) throw new Error('Fel arbetsplatsläge sparades: ' + JSON.stringify(saved));
+            if (saved.siteAddress !== 'Testgatan 1') throw new Error('Fel arbetsplatsadress sparades: ' + JSON.stringify(saved));
+
+            // Regressionstest: materialförslagets X-knapp ska faktiskt köra sin handler.
+            await page.evaluate(async () => {
+              const j = jobs.find(x => x.title === 'Smoke Test Uppdrag');
+              j.materialMentions = [{ name:'Testkabel', qty:1, unit:'st' }];
+              await dbPut('jobs', j);
+              st.jobTab = 'material';
+              render();
+            });
+            const dismiss = page.locator('[data-act="dismiss-material-mention"]').first();
+            await dismiss.waitFor({ state:'visible', timeout:5000 });
+            await dismiss.click();
+            if (await page.locator('[data-act="dismiss-material-mention"]').count()) {
+              throw new Error('Materialförslaget gick inte att ta bort');
+            }
 
             const criticalErrors = errors.filter(e => !e.includes('favicon'));
-            console.log(JSON.stringify({ ok:true, url:page.url(), viewport:page.viewportSize(), serviceWorker:sw, errors:criticalErrors }, null, 2));
-            if (criticalErrors.length) throw new Error('JavaScript-fel upptäcktes: ' + criticalErrors.join(' | '));
+            if (criticalErrors.length) throw new Error('JavaScript-fel: ' + criticalErrors.join(' | '));
+
+            console.log(JSON.stringify({ ok:true, viewport:page.viewportSize(), swState, saved, errors:criticalErrors }, null, 2));
             await browser.close();
           })().catch(err => { console.error(err); process.exit(1); });
           NODE
