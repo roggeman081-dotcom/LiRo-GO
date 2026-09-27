@@ -36,6 +36,7 @@
 
   let allMaterialsV44=null;
   let statsLoadingV44=false;
+  let statsDirtyV44=true;
 
   function isSameDayV44(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
   function todayJobsV44(){
@@ -84,10 +85,11 @@
     return {days,total};
   }
   async function loadStatsV44(force){
-    if(statsLoadingV44||(!force&&allMaterialsV44)) return;
+    if(statsLoadingV44||(!force&&!statsDirtyV44&&allMaterialsV44)) return;
     statsLoadingV44=true;
     try{ allMaterialsV44=await dbAll('materials'); }
     catch{ allMaterialsV44=[]; }
+    statsDirtyV44=false;
     statsLoadingV44=false;
     if(st.view==='home'||(settingsOpen&&st.settingsTab==='stats')) render();
   }
@@ -302,7 +304,7 @@
   const oldAfterHome=afterHome;
   afterHome=function(){
     try{ oldAfterHome(); }catch{}
-    loadStatsV44(false);
+    loadStatsV44(statsDirtyV44);
   };
 
   document.addEventListener('click',function(e){
@@ -339,4 +341,13 @@
       document.querySelector('[data-act="ask-home-liro"]')?.click();
     }
   });
+
+  // Materialändringar kan ske i uppdragsvyer. Markera startsidans statistik
+  // som smutsig så den läses om från IndexedDB nästa gång Hem visas.
+  document.addEventListener('click',function(e){
+    const b=e.target.closest&&e.target.closest('[data-act]');
+    if(!b) return;
+    const materialActs=new Set(['bump-qty','save-material','delete-material','move-material-to-used','save-work-capture']);
+    if(materialActs.has(b.dataset.act)) statsDirtyV44=true;
+  },true);
 })();
