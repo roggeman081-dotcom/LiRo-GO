@@ -5,9 +5,9 @@
   if(window._liroBackupV64) return;
   window._liroBackupV64=true;
 
-  const BACKUP_VERSION=64;
-  const STORE_CANDIDATES=['customers','jobs','materials','photos','inspection','checklists','attachments','documents'];
-  const LS_PREFIX_ALLOW=null; // null = säkerhetskopiera hela localStorage för LiRo GO-originen
+  const BACKUP_VERSION=74;
+  const STORE_CANDIDATES=['customers','jobs','photos','materials','checklist','inspection','radar'];
+  const SECRET_STORAGE_KEYS=new Set(['lirogo_ai_key']);
 
   function nowStamp(){
     const d=new Date();
@@ -74,7 +74,7 @@
     try{
       for(let i=0;i<localStorage.length;i++){
         const k=localStorage.key(i); if(!k) continue;
-        if(!LS_PREFIX_ALLOW||k.startsWith(LS_PREFIX_ALLOW)) out[k]=localStorage.getItem(k);
+        if(!SECRET_STORAGE_KEYS.has(k)) out[k]=localStorage.getItem(k);
       }
     }catch{}
     return out;
@@ -132,6 +132,7 @@
     }
     if(data.localStorage&&typeof data.localStorage==='object'){
       for(const [k,v] of Object.entries(data.localStorage)){
+        if(SECRET_STORAGE_KEYS.has(k)) continue;
         try{ if(v===null) localStorage.removeItem(k); else localStorage.setItem(k,String(v)); }catch{}
       }
     }
@@ -159,7 +160,7 @@
 
   function card(){
     const last=localStorage.getItem('lirogo_last_backup_v64');
-    return `<section class="backup-v64"><div class="bold">Backup till dator</div><div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">Skapar en lokal backupfil med kunder, jobb, material, bilder/dokument som databasen stödjer och appinställningar.</div><div class="backup-v64-actions"><button type="button" class="primary" data-act="backup-now-v64">Skapa backup</button><button type="button" data-act="restore-backup-v64">Återställ backup</button></div><div class="muted" style="font-size:11px;margin-top:10px">${last?`Senaste backup: ${esc(last)}`:'Ingen backup skapad ännu på denna enhet.'}</div></section>`;
+    return `<section class="backup-v64"><div class="bold">Backup till dator</div><div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">Skapar en lokal backupfil med kunder, jobb, material, bilder, kontroller, checklistor, Radar och appinställningar. AI-nyckeln tas inte med.</div><div class="backup-v64-actions"><button type="button" class="primary" data-act="backup-now-v64">Skapa backup</button><button type="button" data-act="restore-backup-v64">Återställ backup</button></div><div class="muted" style="font-size:11px;margin-top:10px">${last?`Senaste backup: ${esc(last)}`:'Ingen backup skapad ännu på denna enhet.'}</div></section>`;
   }
 
   const oldHome=vHome;
