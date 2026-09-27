@@ -2,7 +2,7 @@
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v62';
+const CACHE = 'lirogo-v63';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js'];
 
 self.addEventListener('install', e => {
@@ -12,7 +12,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== 'lirogo-catalog-v60').map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== 'lirogo-catalog-v60' && k !== 'lirogo-export-libs-v63').map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -20,20 +20,20 @@ self.addEventListener('activate', e => {
 function injectHomeOverlay(res){
   if(!res) return res;
   return res.clone().text().then(text => {
-    if(!text.includes('rot-v51.js')) text = text.replace('</body>', '<script src="./rot-v51.js?v=62"></script>\n</body>');
-    if(!text.includes('home-v44.js')) text = text.replace('</body>', '<script src="./home-v44.js?v=62"></script>\n</body>');
-    if(!text.includes('home-v44-safe.js')) text = text.replace('</body>', '<script src="./home-v44-safe.js?v=62"></script>\n</body>');
-    if(!text.includes('theme-v46.js')) text = text.replace('</body>', '<script src="./theme-v46.js?v=62"></script>\n</body>');
-    if(!text.includes('assignment-v52.js')) text = text.replace('</body>', '<script src="./assignment-v52.js?v=62"></script>\n</body>');
-    if(!text.includes('report-v53.js')) text = text.replace('</body>', '<script src="./report-v53.js?v=62"></script>\n</body>');
-    if(!text.includes('finish-v55.js')) text = text.replace('</body>', '<script src="./finish-v55.js?v=62"></script>\n</body>');
-    if(!text.includes('nav-v56.js')) text = text.replace('</body>', '<script src="./nav-v56.js?v=62"></script>\n</body>');
-    if(!text.includes('break-even-v57.js')) text = text.replace('</body>', '<script src="./break-even-v57.js?v=62"></script>\n</body>');
-    if(!text.includes('customer-report-v58.js')) text = text.replace('</body>', '<script src="./customer-report-v58.js?v=62"></script>\n</body>');
-    if(!text.includes('export-v59.js')) text = text.replace('</body>', '<script src="./export-v59.js?v=62"></script>\n</body>');
-    if(!text.includes('catalog-v60.js')) text = text.replace('</body>', '<script src="./catalog-v60.js?v=62"></script>\n</body>');
-    if(!text.includes('material-scope-v61.js')) text = text.replace('</body>', '<script src="./material-scope-v61.js?v=62"></script>\n</body>');
-    if(!text.includes('no-demo-v62.js')) text = text.replace('</body>', '<script src="./no-demo-v62.js?v=62"></script>\n</body>');
+    if(!text.includes('rot-v51.js')) text = text.replace('</body>', '<script src="./rot-v51.js?v=63"></script>\n</body>');
+    if(!text.includes('home-v44.js')) text = text.replace('</body>', '<script src="./home-v44.js?v=63"></script>\n</body>');
+    if(!text.includes('home-v44-safe.js')) text = text.replace('</body>', '<script src="./home-v44-safe.js?v=63"></script>\n</body>');
+    if(!text.includes('theme-v46.js')) text = text.replace('</body>', '<script src="./theme-v46.js?v=63"></script>\n</body>');
+    if(!text.includes('assignment-v52.js')) text = text.replace('</body>', '<script src="./assignment-v52.js?v=63"></script>\n</body>');
+    if(!text.includes('report-v53.js')) text = text.replace('</body>', '<script src="./report-v53.js?v=63"></script>\n</body>');
+    if(!text.includes('finish-v55.js')) text = text.replace('</body>', '<script src="./finish-v55.js?v=63"></script>\n</body>');
+    if(!text.includes('nav-v56.js')) text = text.replace('</body>', '<script src="./nav-v56.js?v=63"></script>\n</body>');
+    if(!text.includes('break-even-v57.js')) text = text.replace('</body>', '<script src="./break-even-v57.js?v=63"></script>\n</body>');
+    if(!text.includes('customer-report-v58.js')) text = text.replace('</body>', '<script src="./customer-report-v58.js?v=63"></script>\n</body>');
+    if(!text.includes('export-v59.js')) text = text.replace('</body>', '<script src="./export-v59.js?v=63"></script>\n</body>');
+    if(!text.includes('catalog-v60.js')) text = text.replace('</body>', '<script src="./catalog-v60.js?v=63"></script>\n</body>');
+    if(!text.includes('material-scope-v61.js')) text = text.replace('</body>', '<script src="./material-scope-v61.js?v=63"></script>\n</body>');
+    if(!text.includes('no-demo-v62.js')) text = text.replace('</body>', '<script src="./no-demo-v62.js?v=63"></script>\n</body>');
     return new Response(text,{status:res.status,statusText:res.statusText,headers:res.headers});
   });
 }
