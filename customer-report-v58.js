@@ -41,6 +41,8 @@
   function customer58(job){ try{return customerOf(job)||null;}catch{return null;} }
   function usedMaterials58(job){ return (jobMaterials||[]).filter(m=>m.jobId===job.id&&m.kind!=='planned'); }
   function photos58(job){ return (jobPhotos||[]).filter(p=>p.jobId===job.id); }
+  function measurements58(job){ return Array.isArray(job?.measurementsV66)?job.measurementsV66:[]; }
+  function docNotes58(job){ return Array.isArray(job?.documentationNotesV66)?job.documentationNotesV66:[]; }
   function checks58(job){
     const rows=(inspection||[]).filter(x=>x.jobId===job.id);
     const done=rows.filter(x=>x.done||x.checked||x.completed).length;
@@ -59,12 +61,14 @@
   }
   function cleanLine58(v){ return String(v||'').replace(/\s+/g,' ').trim(); }
   function reportText58(job){
-    const c=customer58(job),mats=usedMaterials58(job),pics=photos58(job),chk=checks58(job),site=site58(job,c),finished=fmtDate58(job.finishedAt||new Date());
+    const c=customer58(job),mats=usedMaterials58(job),pics=photos58(job),chk=checks58(job),site=site58(job,c),finished=fmtDate58(job.finishedAt||new Date()),measures=measurements58(job),docNotes=docNotes58(job);
     const summary=cleanLine58(job.summary||job.notes||job.description||'Arbetet är utfört enligt uppdraget.');
     const materialLines=mats.length?mats.map(m=>`- ${cleanLine58(m.name||m.description||m.eNr||'Material')} · ${toNumber(m.qty,0).toLocaleString('sv-SE')} ${cleanLine58(m.unit||'st')}`).join('\n'):'- Inget material specificerat i kundrapporten';
     const controlLine=chk.total?`${chk.done} av ${chk.total} registrerade kontrollpunkter markerade som klara.`:'Ingen särskild kontrollmall registrerad för uppdraget.';
     const photoLine=pics.length?`${pics.length} ${pics.length===1?'bild finns':'bilder finns'} dokumenterade i uppdraget.`:'Inga bilder registrerade i uppdraget.';
-    return ['KUNDRAPPORT – LIRO ELTEKNIK','',`Kund: ${cleanLine58(c?.name||'')}`,site?`Arbetsplats: ${site}`:'',`Uppdrag: ${cleanLine58(job.title||'')}`,`Avslutat: ${finished}`,'','UTFÖRT ARBETE',summary,'','ANVÄNT MATERIAL',materialLines,'','DOKUMENTATION OCH KONTROLL',photoLine,controlLine,'',job.changes?`Övrigt / ändringar:\n${cleanLine58(job.changes)}`:'','','Tack för förtroendet.','LiRo Elteknik AB'].filter((line,i,arr)=>line!==''||arr[i-1]!=='').join('\n').trim();
+    const measureLines=measures.length?measures.map(m=>`- ${cleanLine58(m.label||m.type||'Mätvärde')}: ${cleanLine58(m.value)}${m.unit?' '+cleanLine58(m.unit):''}${m.note?' – '+cleanLine58(m.note):''}`).join('\n'):'';
+    const docNoteLines=docNotes.length?docNotes.map(n=>`- ${cleanLine58(n.text)}`).join('\n'):'';
+    return ['KUNDRAPPORT – LIRO ELTEKNIK','',`Kund: ${cleanLine58(c?.name||'')}`,site?`Arbetsplats: ${site}`:'',`Uppdrag: ${cleanLine58(job.title||'')}`,`Avslutat: ${finished}`,'','UTFÖRT ARBETE',summary,'','ANVÄNT MATERIAL',materialLines,'','DOKUMENTATION OCH KONTROLL',photoLine,controlLine,measures.length?'':'',measures.length?'MÄTVÄRDEN':'',measureLines,docNotes.length?'':'',docNotes.length?'DOKUMENTATIONSANTECKNINGAR':'',docNoteLines,'',job.changes?`Övrigt / ändringar:\n${cleanLine58(job.changes)}`:'','','Tack för förtroendet.','LiRo Elteknik AB'].filter((line,i,arr)=>line!==''||arr[i-1]!=='').join('\n').trim();
   }
   function drafts58(){ st.customerReportDraftV58=st.customerReportDraftV58||{}; return st.customerReportDraftV58; }
   function draft58(job){ const d=drafts58(); if(!Object.prototype.hasOwnProperty.call(d,job.id)) d[job.id]=reportText58(job); return d[job.id]; }
