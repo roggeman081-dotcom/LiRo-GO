@@ -144,7 +144,7 @@
   const oldAfter=afterHome;
   afterHome=function(){
     try{ oldAfter(); }catch{}
-    loadV57(true);
+    loadV57(false);
   };
 
   window.addEventListener('focus',()=>loadV57(true));
