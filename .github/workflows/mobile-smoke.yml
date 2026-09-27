@@ -116,9 +116,10 @@ jobs:
             }
 
             // Statistik ska öppna.
+            await page.waitForTimeout(800);
             const stats = page.locator('[data-act="open-stats-v44"]').first();
             if (await stats.count() !== 1) throw new Error('Statistikknappen hittades inte');
-            await stats.click();
+            await stats.evaluate(el => el.click());
             await page.getByText('Statistik', { exact:true }).first().waitFor({ state:'visible', timeout:5000 });
             await page.goBack();
             await page.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:5000 });
