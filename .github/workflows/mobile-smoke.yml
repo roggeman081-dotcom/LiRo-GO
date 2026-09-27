@@ -121,7 +121,9 @@ jobs:
             if (await stats.count() !== 1) throw new Error('Statistikknappen hittades inte');
             await stats.evaluate(el => el.click());
             await page.getByText('Statistik', { exact:true }).first().waitFor({ state:'visible', timeout:5000 });
-            await page.goBack();
+            const backStats = page.locator('[data-act="settings-tab-back"]').first();
+            if (await backStats.count() !== 1) throw new Error('Tillbaka-knappen från Statistik saknas');
+            await backStats.evaluate(el => el.click());
             await page.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:5000 });
 
             // Nytt jobb: kund får skapas utan kundadress.
