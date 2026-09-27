@@ -31,6 +31,7 @@
   const STORE='lirogo_break_even_target_v57';
   let materialsV57=null;
   let loadingV57=false;
+  let materialsDirtyV57=true;
 
   function targetV57(){
     const n=Number(localStorage.getItem(STORE));
@@ -125,9 +126,10 @@
   }
 
   async function loadV57(force){
-    if(loadingV57||(!force&&materialsV57)) return;
+    if(loadingV57||(!force&&!materialsDirtyV57&&materialsV57)) return;
     loadingV57=true;
     try{ materialsV57=await dbAll('materials'); }catch{ materialsV57=[]; }
+    materialsDirtyV57=false;
     loadingV57=false;
     if(st?.view==='home') render();
   }
@@ -144,7 +146,7 @@
   const oldAfter=afterHome;
   afterHome=function(){
     try{ oldAfter(); }catch{}
-    loadV57(false);
+    loadV57(materialsDirtyV57);
   };
 
   window.addEventListener('focus',()=>loadV57(true));
@@ -161,4 +163,11 @@
     localStorage.setItem(STORE,String(Math.round(next)));
     render();
   });
+
+  document.addEventListener('click',function(e){
+    const b=e.target.closest&&e.target.closest('[data-act]');
+    if(!b) return;
+    const materialActs=new Set(['bump-qty','save-material','delete-material','move-material-to-used','save-work-capture']);
+    if(materialActs.has(b.dataset.act)) materialsDirtyV57=true;
+  },true);
 })();
