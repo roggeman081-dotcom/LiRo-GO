@@ -77,33 +77,34 @@ jobs:
           const { webkit, devices } = require('playwright');
           (async() => {
             const browser = await webkit.launch();
-            const context = await browser.newContext({ ...devices['iPhone 15 Pro'] });
-            const page = await context.newPage();
-            const errors = [];
-            page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-            page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+            const url = 'http://127.0.0.1:4173/';
 
-            const response = await page.goto('http://127.0.0.1:4173/', { waitUntil:'networkidle', timeout:45000 });
+            // 1) Testa den riktiga installerade/PWA-liknande appen med service worker och tilläggslagren.
+            const pwaContext = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+            const pwa = await pwaContext.newPage();
+            const pwaErrors = [];
+            pwa.on('pageerror', e => pwaErrors.push('pageerror: ' + e.message));
+            pwa.on('console', m => { if (m.type() === 'error') pwaErrors.push('console: ' + m.text()); });
+
+            const response = await pwa.goto(url, { waitUntil:'networkidle', timeout:45000 });
             if (!response || !response.ok()) throw new Error('Appen svarade inte OK');
 
-            await page.evaluate(async () => {
+            await pwa.evaluate(async () => {
               if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
             });
-            await page.reload({ waitUntil:'networkidle', timeout:45000 });
+            await pwa.reload({ waitUntil:'networkidle', timeout:45000 });
+            await pwa.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:10000 });
 
-            // Vänta på riktig startsida – inte en fast timeout som kan råka träffa öppningsanimationen.
-            await page.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:10000 });
-
-            const body = await page.locator('body').innerText();
+            const body = await pwa.locator('body').innerText();
             for (const act of ['nav-home','nav-projects','open-radar','open-settings']) {
-              if (await page.locator(`.bottomnav [data-act="${act}"]`).count() !== 1) {
+              if (await pwa.locator(`.bottomnav [data-act="${act}"]`).count() !== 1) {
                 throw new Error('Bottenmeny saknar action ' + act);
               }
             }
             if (!body.includes('Materialvinst')) throw new Error('Smarta startsidan laddades inte');
+            if (await pwa.locator('[data-act="open-stats-v44"]').count() < 1) throw new Error('Statistikknappen hittades inte');
 
-            // PWA/cache ska matcha aktuell version i sw.js.
-            const swState = await page.evaluate(async () => {
+            const swState = await pwa.evaluate(async () => {
               const reg = await navigator.serviceWorker.getRegistration();
               const cacheKeys = await caches.keys();
               const swText = await (await fetch('./sw.js', { cache:'no-store' })).text();
@@ -115,35 +116,47 @@ jobs:
               throw new Error('Aktuell PWA-cache saknas: ' + JSON.stringify(swState));
             }
 
-            // Statistikknappen ska finnas på startsidan. Själva statistikvyn testas
-            // separat i kodkontrollerna; här prioriteras stabilt end-to-end-flöde.
-            if (await page.locator('[data-act="open-stats-v44"]').count() < 1) {
-              throw new Error('Statistikknappen hittades inte');
-            }
+            const criticalPwaErrors = pwaErrors.filter(e => !e.includes('favicon'));
+            if (criticalPwaErrors.length) throw new Error('PWA JavaScript-fel: ' + criticalPwaErrors.join(' | '));
+            await pwaContext.close();
 
-            // Nytt jobb: knappen finns; gå in i wizard deterministiskt för att testa formulärlogiken utan hem-widgetars async-renderingar.
-            if (await page.locator('[data-act="new-job"]').count() < 1) throw new Error('Nytt jobb-knappen saknas');
+            // 2) Testa kärnflödet utan service worker. Det isolerar formulär/business logic
+            // från startsidans asynkrona widget-renderingar och testar samma WebKit-motor som iPhone.
+            const coreContext = await browser.newContext({ ...devices['iPhone 15 Pro'], serviceWorkers:'block' });
+            const page = await coreContext.newPage();
+            const errors = [];
+            page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+            page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+
+            const coreResponse = await page.goto(url, { waitUntil:'networkidle', timeout:45000 });
+            if (!coreResponse || !coreResponse.ok()) throw new Error('Kärnappen svarade inte OK');
+            await page.waitForFunction(() => typeof emptyDraft === 'function' && typeof render === 'function', null, { timeout:10000 });
+
             await page.evaluate(() => {
               draft = emptyDraft();
               searchQuery = '';
-              st = { view:'wizard', step:0 };
+              st = { view:'wizard', step:1 };
               render();
             });
-            await page.locator('[data-act="set-kind"][data-kind="customer_job"]').evaluate(el => el.click());
-            await page.locator('[data-act="set-method"][data-method="manual"]').evaluate(el => el.click());
-            await page.locator('[data-field="nc.name"]').waitFor({ state:'visible' });
+            await page.locator('[data-field="nc.name"]').waitFor({ state:'visible', timeout:5000 });
 
+            // Ny kund ska kunna fortsätta utan kundadress.
             await page.locator('[data-field="nc.name"]').fill('Smoke Test Kund');
             await page.locator('[data-field="nc.phone"]').fill('0701234567');
             const formattedPhone = await page.locator('[data-field="nc.phone"]').inputValue();
             if (formattedPhone !== '070-123 45 67') throw new Error('Telefon formaterades inte: ' + formattedPhone);
 
+            const saveAsContact = page.locator('[data-act="toggle-save-contact"]');
+            if ((await saveAsContact.getAttribute('class') || '').includes(' on')) {
+              throw new Error('Spara som kontakt ska vara av som standard');
+            }
+
             const customerNext = page.locator('.wiz-footer [data-act="wiz-next"]');
             if (await customerNext.isDisabled()) throw new Error('Kundsteget kräver fortfarande adress');
             await customerNext.click();
 
-            // Utan kundadress måste arbetsplats krävas och "samma adress" får inte kunna vara aktiv.
-            await page.locator('[data-field="ws.address"]').waitFor({ state:'visible' });
+            // Utan kundadress måste arbetsplats anges.
+            await page.locator('[data-field="ws.address"]').waitFor({ state:'visible', timeout:5000 });
             const workNext = page.locator('.wiz-footer [data-act="wiz-next"]');
             if (!(await workNext.isDisabled())) throw new Error('Arbetsplatsadress krävs inte trots saknad kundadress');
             const sameAddressSwitch = page.locator('[data-act="toggle-use-customer-address"]');
@@ -165,16 +178,25 @@ jobs:
             await page.locator('[data-act="wiz-submit"]').click();
             await page.getByText('Smoke Test Uppdrag', { exact:true }).first().waitFor({ state:'visible', timeout:5000 });
 
-            // Kontrollera den faktiskt sparade datan, inte bara UI.
             const saved = await page.evaluate(() => {
               const j = jobs.find(x => x.title === 'Smoke Test Uppdrag');
-              return j ? { siteUsesCustomerAddress:j.siteUsesCustomerAddress, siteAddress:j.siteAddress, sitePostalCode:j.sitePostalCode } : null;
+              const cust = j ? customers.find(x => x.id === j.customerId) : null;
+              return j ? {
+                siteUsesCustomerAddress:j.siteUsesCustomerAddress,
+                siteAddress:j.siteAddress,
+                sitePostalCode:j.sitePostalCode,
+                customerAddress:cust?.address || null,
+                saveAsContact:cust?.saveAsContact
+              } : null;
             });
             if (!saved) throw new Error('Testuppdraget sparades inte');
             if (saved.siteUsesCustomerAddress !== false) throw new Error('Fel arbetsplatsläge sparades: ' + JSON.stringify(saved));
             if (saved.siteAddress !== 'Testgatan 1') throw new Error('Fel arbetsplatsadress sparades: ' + JSON.stringify(saved));
+            if (saved.sitePostalCode !== '252 20') throw new Error('Fel postnummer sparades: ' + JSON.stringify(saved));
+            if (saved.customerAddress !== null) throw new Error('Tom kundadress sparades fel: ' + JSON.stringify(saved));
+            if (saved.saveAsContact !== false) throw new Error('Spara som kontakt blev felaktigt aktivt: ' + JSON.stringify(saved));
 
-            // Regressionstest: materialförslagets X-knapp ska faktiskt köra sin handler.
+            // Materialförslagets knappar ska fungera oberoende av Registrera material-panelen.
             await page.evaluate(async () => {
               const j = jobs.find(x => x.title === 'Smoke Test Uppdrag');
               j.materialMentions = [{ name:'Testkabel', qty:1, unit:'st' }];
@@ -189,10 +211,16 @@ jobs:
               throw new Error('Materialförslaget gick inte att ta bort');
             }
 
-            const criticalErrors = errors.filter(e => !e.includes('favicon'));
-            if (criticalErrors.length) throw new Error('JavaScript-fel: ' + criticalErrors.join(' | '));
+            const criticalErrors = errors.filter(e => !e.includes('favicon') && !e.includes('Service Worker'));
+            if (criticalErrors.length) throw new Error('Kärnapp JavaScript-fel: ' + criticalErrors.join(' | '));
 
-            console.log(JSON.stringify({ ok:true, viewport:page.viewportSize(), swState, saved, errors:criticalErrors }, null, 2));
+            console.log(JSON.stringify({
+              ok:true,
+              pwa:{ viewport:pwa.viewportSize(), swState, errors:criticalPwaErrors },
+              core:{ viewport:page.viewportSize(), saved, errors:criticalErrors }
+            }, null, 2));
+
+            await coreContext.close();
             await browser.close();
           })().catch(err => { console.error(err); process.exit(1); });
           NODE
