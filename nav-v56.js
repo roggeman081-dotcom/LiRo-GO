@@ -28,7 +28,9 @@
 
   function shouldShowNavV56(){
     if(!st) return false;
-    if(st.view==='opening'||st.view==='work') return false;
+    // I flöden där användaren fyller i steg-för-steg ska bottenmenyn inte
+    // konkurrera med formulärets egen footer/primärknapp.
+    if(st.view==='opening'||st.view==='work'||st.view==='wizard') return false;
     return true;
   }
 
