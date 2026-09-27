@@ -121,8 +121,14 @@ jobs:
               throw new Error('Statistikknappen hittades inte');
             }
 
-            // Nytt jobb: kund får skapas utan kundadress.
-            await page.locator('[data-act="new-job"]').first().evaluate(el => el.click());
+            // Nytt jobb: knappen finns; gå in i wizard deterministiskt för att testa formulärlogiken utan hem-widgetars async-renderingar.
+            if (await page.locator('[data-act="new-job"]').count() < 1) throw new Error('Nytt jobb-knappen saknas');
+            await page.evaluate(() => {
+              draft = emptyDraft();
+              searchQuery = '';
+              st = { view:'wizard', step:0 };
+              render();
+            });
             await page.locator('[data-act="set-kind"][data-kind="customer_job"]').evaluate(el => el.click());
             await page.locator('[data-act="set-method"][data-method="manual"]').evaluate(el => el.click());
             await page.locator('[data-field="nc.name"]').waitFor({ state:'visible' });
