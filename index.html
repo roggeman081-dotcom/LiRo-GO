@@ -421,7 +421,9 @@ function toggleDictate(key, onResult){
     rec = new SR();
     rec.lang='sv-SE';
     rec.interimResults=true;
-    rec.continuous=false;
+    // v80: continuous=true – iOS klipper annars ofta efter första lilla pausen och
+    // skickar ibland aldrig onend. Vi stoppar själva efter tystnad (se silenceTimer).
+    rec.continuous=true;
     rec.maxAlternatives=1;
   }catch{
     keyboardDictationFallback(key);
@@ -435,7 +437,7 @@ function toggleDictate(key, onResult){
   sess.end=(silent)=>{
     if(sess.ended) return;
     sess.ended=true;
-    clearTimeout(startTimeout);
+    clearTimeout(startTimeout); clearTimeout(sess.silenceTimer); clearTimeout(sess.maxTimer); clearTimeout(sess.liveTimer);
     if(dictationSession===sess) dictationSession=null;
     if(activeRecognition===rec) activeRecognition=null;
     if(st.dictatingKey===key) st.dictatingKey=null;
@@ -457,6 +459,10 @@ function toggleDictate(key, onResult){
     }
   },6000);
 
+  // Avsluta själv: 1,6 s tystnad efter senaste ordet, eller max 20 s totalt.
+  const stopSoon=()=>{ try{ rec.stop(); }catch{} setTimeout(()=>sess.end(),700); };
+  sess.maxTimer=setTimeout(stopSoon,20000);
+
   rec.onstart=()=>{
     sess.started=true;
     clearTimeout(startTimeout);
@@ -475,8 +481,20 @@ function toggleDictate(key, onResult){
       all+=t; if(r.isFinal) fin+=t;
     }
     if(all.trim()) sess.text=all.trim();
-    if(fin.trim()) sess.finalText=fin.trim();
+    // I continuous-läge är slutresultatet alla delar; använd hela texten.
+    if(fin.trim() && fin.trim().length>=all.trim().length) sess.finalText=fin.trim();
     showLiveTranscript(key, sess.text);
+    clearTimeout(sess.silenceTimer);
+    sess.silenceTimer=setTimeout(stopSoon,1600);
+    // Materialsök: uppdatera träfflistan medan du pratar (bara listan, inte knappar/mikrofon).
+    if(key==='material' && st.matPanelMode!=='manual' && typeof vMatPanelList==='function'){
+      clearTimeout(sess.liveTimer);
+      sess.liveTimer=setTimeout(()=>{
+        st.matSearch=sess.text;
+        const box=document.getElementById('matPanelList');
+        if(box) box.innerHTML=vMatPanelList();
+      },250);
+    }
   };
   rec.onerror=(ev)=>{
     const err=ev?.error||'';

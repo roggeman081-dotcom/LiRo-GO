@@ -139,17 +139,24 @@
       st.matSearch='';
       st.matDraft={};
       render();
-      setTimeout(function(){
-        toggleDictate('material',function(text){
-          if(st.matPanelMode==='manual'){
-            st.matDraft=st.matDraft||{};
-            st.matDraft.name=text;
-          }else{
-            st.matSearch=text;
-          }
-          render();
-        });
-      },0);
+      // v80: ladda prislistan (panelen öppnades tidigare utan den → "Inga träffar"/"kunde inte laddas").
+      if(typeof ensureCatalog==='function'){
+        Promise.resolve(ensureCatalog()).then(function(){
+          if(!st.matPanel || st.dictatingKey==='material') return; // rita inte om mitt i diktat
+          const box=document.getElementById('matPanelList');
+          if(box && typeof vMatPanelList==='function') box.innerHTML=vMatPanelList();
+        }).catch(function(){});
+      }
+      // v80: starta direkt i trycket (inte setTimeout) – iOS kräver att mikrofonen startas i själva användartrycket.
+      toggleDictate('material',function(text){
+        if(st.matPanelMode==='manual'){
+          st.matDraft=st.matDraft||{};
+          st.matDraft.name=text;
+        }else{
+          st.matSearch=text;
+        }
+        render();
+      });
       return;
     }
 
