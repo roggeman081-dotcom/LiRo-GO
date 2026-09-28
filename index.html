@@ -394,6 +394,7 @@ function toggleDictate(key, onResult){
   if(st.dictatingKey===key){
     if(activeRecognition){ try{ activeRecognition.stop(); }catch{} }
     st.dictatingKey=null;
+    render();
     return;
   }
 
@@ -421,14 +422,17 @@ function toggleDictate(key, onResult){
   }
 
   let started=false, gotResult=false, fallbackUsed=false;
-  const finish=()=>{
+  const finish=(redraw=true)=>{
     activeRecognition=null;
+    const was=st.dictatingKey;
     st.dictatingKey=null;
+    // v78: rita om så knappen går tillbaka från "Lyssnar…" när mikrofonen stängts.
+    if(redraw && was) setTimeout(()=>{ if(!st.dictatingKey) render(); },0);
   };
   const fallback=(message)=>{
     if(fallbackUsed) return;
     fallbackUsed=true;
-    finish();
+    finish(false);
     keyboardDictationFallback(key,message);
   };
 
@@ -839,11 +843,54 @@ async function seedMaterialUsage(){
     localStorage.setItem('lirogo_mat_usage', JSON.stringify(u));
   }catch{}
 }
+/* Talspråk -> hur Ahlsell skriver. Varje sökord matchar om NÅGOT av alternativen finns i namnet. */
+const SEARCH_SYNONYMS = {
+  'TVÅVÄGS':['2-V','2V','2 V','TVÅVÄG','DUBB'], 'TVÅVÄG':['2-V','2V','2 V','TVÅVÄG','DUBB'],
+  'DUBBEL':['2-V','2V','DUBB'], 'DUBBELT':['2-V','2V','DUBB'],
+  'ENVÄGS':['1-V','1V','ENKEL','ENVÄG'], 'ENKEL':['1-V','1V','ENKEL'], 'ENKELT':['1-V','1V','ENKEL'],
+  'TREVÄGS':['3-V','3V','TREVÄG'], 'FYRVÄGS':['4-V','4V','FYRVÄG'],
+  'INFÄLLT':['INF'], 'INFÄLLD':['INF'], 'INFÄLLDA':['INF'],
+  'UTANPÅLIGGANDE':['UTANP','U-P','U/P'], 'UTANPÅ':['UTANP','U-P','U/P'],
+  'JORDAT':['JORD'], 'JORDADE':['JORD'], 'OJORDAT':['OJORD'],
+  'SCHNEIDER':['SCHNEIDER','EXXACT','ELJO','RENOVA','UNICA','WISER'],
+  'JORDFELSBRYTARE':['JORDFELS','JFB'], 'JFB':['JFB','JORDFELS'],
+  'DOSA':['DOSA','DOS '], 'KOPPLINGSDOSA':['KOPPLINGSDOSA','KOPPL.DOSA','KOPPLINGSDOS'],
+  'VIT':['VIT'], 'SVART':['SVART'],
+};
+function searchAlternatives(word){
+  const alts = SEARCH_SYNONYMS[word];
+  if(alts) return alts.includes(word)?alts:[word,...alts];
+  // böjningar: "uttagen" -> "UTTAG", "brytare" oförändrat
+  const stems=[word];
+  for(const suf of ['ARNA','ERNA','EN','ET','AR','ER','A']){
+    if(word.length>suf.length+3 && word.endsWith(suf)){ stems.push(word.slice(0,-suf.length)); break; }
+  }
+  return stems;
+}
+function scoreWordInName(name, w){
+  // Bästa förekomsten räknas: början av namnet > början av ett ord > mitt i ett sammansatt ord.
+  let pos = name.indexOf(w), best = -Infinity;
+  while(pos>=0){
+    const prev = name[pos-1], prev2 = name[pos-2];
+    let sc;
+    if(pos===0) sc = 20;
+    else if(/[^A-ZÅÄÖ0-9]/.test(prev)) sc = 5;
+    else if(prev==='O' && (pos===1 || /[^A-ZÅÄÖ0-9]/.test(prev2))) sc = -200; // O-JORDAT = motsatsen
+    else sc = -10; // t.ex. "uttag" i "VÄGGUTTAG"
+    if(sc>best) best = sc;
+    pos = name.indexOf(w, pos+1);
+  }
+  return best;
+}
 function searchCatalog(query, limit){
   if(!catalog || !query || query.trim().length < 2) return [];
   const q = normSearchText(query.trim());
-  const words = q.split(/\s+/).filter(Boolean);
+  const words = q.split(/[\s,]+/).filter(w=>w.length>=2 || /\d/.test(w));
   if(!words.length) return [];
+  const alts = words.map(searchAlternatives);
+  // Alla ord ska helst träffa. Saknas några (t.ex. ett märke som inte står i namnet)
+  // visas ändå artiklar där minst hälften av orden träffar, men efter de fullständiga träffarna.
+  const need = words.length<=2 ? words.length : Math.ceil(words.length/2);
   const names = catalogNamesUpper();
   const favs = new Set(getFavoriteArtnrs());
   const recent = getRecentArtnrs();
@@ -851,26 +898,15 @@ function searchCatalog(query, limit){
   const hits = [];
   for(let i=0; i<catalog.length; i++){
     const row = catalog[i], name = names[i];
-    if(row[0].startsWith(q)){ hits.push({row, score:5000 + (row[0]===q?1000:0)}); continue; }
-    let ok = true, score = 0;
-    for(const w of words){
-      let pos = name.indexOf(w);
-      if(pos<0){ ok=false; break; }
-      // Bästa förekomsten räknas: början av namnet > början av ett ord > mitt i ett sammansatt ord.
+    if(row[0].startsWith(q)){ hits.push({row, score:50000 + (row[0]===q?1000:0)}); continue; }
+    let matched = 0, score = 0;
+    for(const list of alts){
       let best = -Infinity;
-      while(pos>=0){
-        const prev = name[pos-1], prev2 = name[pos-2];
-        let sc;
-        if(pos===0) sc = 20;
-        else if(/[^A-ZÅÄÖ0-9]/.test(prev)) sc = 5;
-        else if(prev==='O' && (pos===1 || /[^A-ZÅÄÖ0-9]/.test(prev2))) sc = -200; // O-JORDAT = motsatsen
-        else sc = -10; // t.ex. "uttag" i "VÄGGUTTAG"
-        if(sc>best) best = sc;
-        pos = name.indexOf(w, pos+1);
-      }
-      score += best;
+      for(const w of list){ if(name.indexOf(w)>=0){ const sc=scoreWordInName(name,w); if(sc>best) best=sc; } }
+      if(best>-Infinity){ matched++; score += best; }
     }
-    if(!ok) continue;
+    if(matched < need || matched===0) continue;
+    score += matched*300;
     const a = row[0];
     if(favs.has(a)) score += 1000;
     if(usage[a]) score += Math.min(usage[a],40)*50;
