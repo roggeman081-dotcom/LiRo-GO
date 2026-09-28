@@ -748,9 +748,45 @@ function jobOfferSummary(job){
 }
 
 /* ---- foton ---- */
+/* v78: krymp foton innan de sparas. Mobilbilder är 3–5 MB; oförminskade fyller de
+   telefonens lagring och gör backupfilen så stor att Safari kan krascha.
+   Långsidan max 1600 px räcker gott för dokumentation och kundrapport. */
+const PHOTO_MAX_SIDE = 1600, PHOTO_JPEG_QUALITY = 0.8;
+function loadImageForResize(file){
+  if(typeof createImageBitmap==='function'){
+    return createImageBitmap(file,{imageOrientation:'from-image'}).catch(()=>createImageBitmap(file));
+  }
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(url); resolve(img); };
+    img.onerror=e=>{ URL.revokeObjectURL(url); reject(e); };
+    img.src=url;
+  });
+}
+async function shrinkPhoto(file){
+  try{
+    if(!file || !/^image\//.test(file.type||'') || /gif|svg/.test(file.type)) return file;
+    const img=await loadImageForResize(file);
+    const w=img.width||img.naturalWidth, h=img.height||img.naturalHeight;
+    if(!w||!h) return file;
+    const scale=Math.min(1, PHOTO_MAX_SIDE/Math.max(w,h));
+    const cw=Math.round(w*scale), ch=Math.round(h*scale);
+    const canvas=document.createElement('canvas'); canvas.width=cw; canvas.height=ch;
+    const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0,cw,ch);
+    if(img.close) img.close();
+    const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',PHOTO_JPEG_QUALITY));
+    canvas.width=canvas.height=0;
+    if(!blob || blob.size>=file.size) return file;
+    return blob;
+  }catch(err){
+    console.warn('Kunde inte krympa foto, sparar originalet',err);
+    return file;
+  }
+}
 async function addPhoto(jobId, file, comment){
   const id=uid();
-  const p={ id, jobId, blob:file, comment:comment||'', createdAt:new Date().toISOString() };
+  const blob=await shrinkPhoto(file);
+  const p={ id, jobId, blob, comment:comment||'', createdAt:new Date().toISOString() };
   await dbPut('photos',p); return p;
 }
 async function updatePhotoComment(id, comment){
@@ -775,15 +811,76 @@ async function ensureCatalog(){
   catalogLoading = false;
   return catalog;
 }
+/* v78: sökning per ord i valfri ordning ("uttag jordat" = "jordat uttag"), rankad efter
+   dina favoriter, hur ofta du använt artikeln och senast använda. */
+let catalogUpperSrc = null, catalogUpper = null;
+function catalogNamesUpper(){
+  if(catalogUpperSrc!==catalog){
+    catalogUpperSrc = catalog;
+    catalogUpper = catalog ? catalog.map(r=>normSearchText(r[3])) : null;
+  }
+  return catalogUpper;
+}
+function normSearchText(t){
+  return String(t||'').toUpperCase().replace(/(\d)\.(\d)/g,'$1,$2');
+}
+function getMaterialUsage(){ try{ return JSON.parse(localStorage.getItem('lirogo_mat_usage')||'{}')||{}; }catch{ return {}; } }
+function bumpMaterialUsage(artnr){
+  if(!artnr) return;
+  const u=getMaterialUsage(); u[artnr]=(u[artnr]||0)+1;
+  try{ localStorage.setItem('lirogo_mat_usage', JSON.stringify(u)); }catch{}
+}
+async function seedMaterialUsage(){
+  // Första gången: bygg upp användningsstatistik från material som redan registrerats.
+  if(localStorage.getItem('lirogo_mat_usage')) return;
+  try{
+    const rows=await dbAll('materials'), u={};
+    for(const m of rows) if(m && m.eNr) u[m.eNr]=(u[m.eNr]||0)+1;
+    localStorage.setItem('lirogo_mat_usage', JSON.stringify(u));
+  }catch{}
+}
 function searchCatalog(query, limit){
   if(!catalog || !query || query.trim().length < 2) return [];
-  const q = query.trim().toUpperCase();
-  const out = [];
-  for(let i=0; i<catalog.length && out.length<limit; i++){
-    const row = catalog[i];
-    if(row[0].startsWith(q) || row[3].toUpperCase().includes(q)) out.push(row);
+  const q = normSearchText(query.trim());
+  const words = q.split(/\s+/).filter(Boolean);
+  if(!words.length) return [];
+  const names = catalogNamesUpper();
+  const favs = new Set(getFavoriteArtnrs());
+  const recent = getRecentArtnrs();
+  const usage = getMaterialUsage();
+  const hits = [];
+  for(let i=0; i<catalog.length; i++){
+    const row = catalog[i], name = names[i];
+    if(row[0].startsWith(q)){ hits.push({row, score:5000 + (row[0]===q?1000:0)}); continue; }
+    let ok = true, score = 0;
+    for(const w of words){
+      let pos = name.indexOf(w);
+      if(pos<0){ ok=false; break; }
+      // Bästa förekomsten räknas: början av namnet > början av ett ord > mitt i ett sammansatt ord.
+      let best = -Infinity;
+      while(pos>=0){
+        const prev = name[pos-1], prev2 = name[pos-2];
+        let sc;
+        if(pos===0) sc = 20;
+        else if(/[^A-ZÅÄÖ0-9]/.test(prev)) sc = 5;
+        else if(prev==='O' && (pos===1 || /[^A-ZÅÄÖ0-9]/.test(prev2))) sc = -200; // O-JORDAT = motsatsen
+        else sc = -10; // t.ex. "uttag" i "VÄGGUTTAG"
+        if(sc>best) best = sc;
+        pos = name.indexOf(w, pos+1);
+      }
+      score += best;
+    }
+    if(!ok) continue;
+    const a = row[0];
+    if(favs.has(a)) score += 1000;
+    if(usage[a]) score += Math.min(usage[a],40)*50;
+    const ri = recent.indexOf(a);
+    if(ri>=0) score += 200 - ri*5;
+    score -= name.length/100;
+    hits.push({row, score});
   }
-  return out;
+  hits.sort((x,y)=>y.score-x.score);
+  return hits.slice(0, limit).map(h=>h.row);
 }
 function catalogRow(artnr){ return catalog ? catalog.find(r=>r[0]===artnr) : null; }
 
@@ -1247,7 +1344,7 @@ async function addMaterial(jobId, input){
     qty:input.qty||0,unit:input.unit||'st',unitPrice:input.unitPrice||0,kind:input.kind||'used',
     createdAt:now,updatedAt:now
   };
-  await dbPut('materials',m); return m;
+  await dbPut('materials',m); bumpMaterialUsage(m.eNr); return m;
 }
 async function deleteMaterial(id){ await dbDel('materials',id); }
 async function moveMaterialToUsed(id){
@@ -3593,7 +3690,7 @@ $app.addEventListener('change', async e=>{
     t.value='';
     const p = await addPhoto(st.id, file, '');
     jobPhotos.push(p);
-    photoObjectUrls[p.id] = URL.createObjectURL(file);
+    photoObjectUrls[p.id] = URL.createObjectURL(p.blob);
     flash('Foto sparat'); render();
   }
 });
@@ -4111,6 +4208,7 @@ $app.addEventListener('click', async e=>{
     checklist = await dbAll('checklist');
     inspection = await dbAll('inspection');
     radar = await dbAll('radar');
+    seedMaterialUsage();
     // Produktion: skapa aldrig demo-/fejkjobb automatiskt.
   }catch(err){ console.error('Kunde inte öppna lagring', err); }
   loadCachedIcalEvents();
@@ -4121,5 +4219,23 @@ $app.addEventListener('click', async e=>{
   }
 })();
 </script>
+<!-- Tilläggslager: laddas direkt här (tidigare injicerades de av sw.js, vilket gjorde att första öppningen saknade dem). Ordningen spelar roll. -->
+<script src="./rot-v51.js"></script>
+<script src="./home-v44.js"></script>
+<script src="./home-v44-safe.js"></script>
+<script src="./theme-v46.js"></script>
+<script src="./assignment-v52.js"></script>
+<script src="./report-v53.js"></script>
+<script src="./finish-v55.js"></script>
+<script src="./nav-v56.js"></script>
+<script src="./break-even-v57.js"></script>
+<script src="./customer-report-v58.js"></script>
+<script src="./export-v59.js"></script>
+<script src="./catalog-v60.js"></script>
+<script src="./material-scope-v61.js"></script>
+<script src="./no-demo-v62.js"></script>
+<script src="./backup-v64.js"></script>
+<script src="./document-job-v66.js"></script>
+<script src="./flow-v67.js"></script>
 </body>
 </html>
