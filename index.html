@@ -217,6 +217,10 @@ body.wizard-mode .wiz-body{padding-bottom:calc(110px + env(safe-area-inset-botto
 .mat-search svg.i{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted)}
 .mat-search input{padding-left:40px;padding-right:40px}
 .mat-search .barcode-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:36px;height:36px}
+.mat-dictate-main{margin-top:10px;min-height:46px;border-radius:16px;background:var(--accent);color:var(--ink);font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;width:100%}
+.mat-dictate-main svg{width:20px;height:20px}
+.mat-dictate-main.mic-listening{animation:mic-pulse 1.2s ease-in-out infinite}
+
 .mat-tabs{display:flex;gap:8px;margin-top:14px}
 .mat-tab{padding:8px 14px;border-radius:999px;background:var(--surface);color:var(--muted);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
 .mat-tab.on{background:var(--accent);color:var(--ink)}
@@ -3011,6 +3015,7 @@ function vMaterialPanel(job){
       <div class="mat-panel-list">
         <div class="add-form" style="margin-top:0">
           <input type="text" placeholder="Namn på artikel" value="${esc(st.matDraft?.name||'')}" data-field="mat-name" autocomplete="off">
+          <button type="button" class="mat-dictate-main ${st.dictatingKey==='material'?'mic-listening':''}" data-act="dictate-material">${ICON.mic}<span>${st.dictatingKey==='material'?'Lyssnar…':'Diktera material'}</span></button>
           <input type="text" placeholder="E-nummer (valfritt)" value="${esc(st.matDraft?.eNr||'')}" data-field="mat-enr">
           <div class="row2">
             <input type="number" inputmode="decimal" placeholder="Antal" value="${esc(st.matDraft?.qty||'')}" data-field="mat-qty">
@@ -3067,16 +3072,17 @@ function vMaterialPanel(job){
         <input type="text" placeholder="Sök material, artikelnummer eller text" value="${esc(st.matSearch||'')}" data-field="mat-search" autocomplete="off">
         <button class="iconbtn barcode-btn" data-act="scan-barcode" aria-label="Skanna streckkod">${ICON.barcode}</button>
       </div>
+      <button type="button" class="mat-dictate-main ${st.dictatingKey==='material'?'mic-listening':''}" data-act="dictate-material">${ICON.mic}<span>${st.dictatingKey==='material'?'Lyssnar…':'Diktera material'}</span></button>
       <div class="mat-tabs">
         <button class="mat-tab ${st.matTab!=='favorites'?'on':''}" data-act="set-mat-tab" data-tab="recent">${ICON.clock}<span>Senaste</span></button>
         <button class="mat-tab ${st.matTab==='favorites'?'on':''}" data-act="set-mat-tab" data-tab="favorites">${ICON.star}<span>Favoriter</span></button>
       </div>
     </div>
     <div class="mat-panel-list" id="matPanelList">${vMatPanelList()}</div>
-    <div class="snabbval ${DICTATION_SUPPORTED?'cols4':''}">
+    <div class="snabbval cols4">
       <button data-act="switch-to-manual">${ICON.box}<span>Manuellt</span></button>
       <button data-act="scan-barcode">${ICON.barcode}<span>Streckkod</span></button>
-      ${DICTATION_SUPPORTED?`<button data-act="dictate-material" class="${st.dictatingKey==='material'?'mic-listening':''}">${ICON.mic}<span>${st.dictatingKey==='material'?'Lyssnar…':'Diktera'}</span></button>`:''}
+      <button data-act="dictate-material" class="${st.dictatingKey==='material'?'mic-listening':''}">${ICON.mic}<span>${st.dictatingKey==='material'?'Lyssnar…':'Diktera'}</span></button>
       <button data-act="switch-to-ai">${ICON.sparkle}<span>AI-förslag</span></button>
     </div>
   </div>`;
