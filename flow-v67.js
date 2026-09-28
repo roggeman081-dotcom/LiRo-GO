@@ -172,3 +172,14 @@
     }
   },true);
 })();
+
+/* v85: materialassistenten ska laddas av den vanliga appkedjan och inte vara
+   beroende av att service workern redan styr sidan. Dubbletter stoppas av v83 själv. */
+(function loadMaterialAssistantV83(){
+  if(window._liroMaterialAssistantV83 || document.querySelector('script[data-liro-material-assistant]')) return;
+  const s=document.createElement('script');
+  s.src='./material-assistant-v83.js?v=85';
+  s.async=false;
+  s.dataset.liroMaterialAssistant='v83';
+  document.body.appendChild(s);
+})();
