@@ -24,16 +24,6 @@ self.addEventListener('activate', e => {
   );
 });
 
-async function appHtmlWithV83(){
-  const hit = await caches.match('./index.html');
-  const res = hit || await fetch('./index.html');
-  let html = await res.text();
-  if(!html.includes('material-assistant-v83.js')){
-    html = html.replace('</body>','<script src="./material-assistant-v83.js"></script>\n</body>');
-  }
-  return new Response(html,{status:200,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache'}});
-}
-
 self.addEventListener('fetch', e => {
   const req=e.request;
   if(req.method!=='GET' || new URL(req.url).origin!==location.origin) return;
@@ -43,10 +33,10 @@ self.addEventListener('fetch', e => {
   const isCatalog=url.pathname.endsWith('/katalog-el.json');
 
   if(isNavigation){
-    e.respondWith(appHtmlWithV83().catch(async()=>{
-      const fallback=await caches.match('./index.html');
-      return fallback || fetch('./index.html');
-    }));
+    e.respondWith(
+      caches.match('./index.html').then(hit=>hit || fetch('./index.html'))
+        .catch(()=>caches.match('./index.html'))
+    );
     return;
   }
 
