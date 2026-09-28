@@ -400,7 +400,7 @@ async function createJob(input){
     isQuote:!!input.isQuote, status:deriveStatus(input.plannedAt), markupPercent:15, createdAt:now, updatedAt:now,
     siteUsesCustomerAddress: input.siteUsesCustomerAddress!==false,
     siteAddress: input.siteAddress||null, sitePostalCode: input.sitePostalCode||null, siteCity: input.siteCity||null,
-    changes:'', notes:'', summary:'', loggedHours:0,
+    changes:'', notes:'', summary:'', loggedHours:0, timeEntries:[],
     hourlyRate: defaults.hourlyRate, multiRatesEnabled:false, rateChannels:[],
     travelMode: defaults.travelMode, travelFixedFee: defaults.travelFixedFee, travelPerKm: defaults.travelPerKm, travelKm:0,
     estimatedHours:0, showRot:false };
@@ -416,6 +416,30 @@ function jobSiteAddressText(job){
 }
 function fmtHours(h){
   return (Number(h)||0).toLocaleString('sv-SE', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' h';
+}
+function todayISODate(){ return new Date().toISOString().slice(0,10); }
+function fmtDateSv(iso){
+  if(!iso) return '';
+  return new Date(iso).toLocaleDateString('sv-SE', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+/* ---- arbetad tid: loggade tidsposter med datum + kort beskrivning ---- */
+function totalLoggedHours(job){
+  const entries = job.timeEntries||[];
+  if(entries.length) return entries.reduce((s,e)=>s+(Number(e.hours)||0), 0);
+  return Number(job.loggedHours)||0; // äldre jobb med enbart det gamla enkla timfältet
+}
+async function addTimeEntry(jobId, entry){
+  const job = jobById(jobId); if(!job) return;
+  job.timeEntries = job.timeEntries||[];
+  job.timeEntries.push({ id:uid(), date: entry.date||todayISODate(), hours: Number(entry.hours)||0, description: (entry.description||'').trim() });
+  job.timeEntries.sort((a,b)=>a.date.localeCompare(b.date));
+  await dbPut('jobs', job);
+}
+async function deleteTimeEntry(jobId, entryId){
+  const job = jobById(jobId); if(!job) return;
+  job.timeEntries = (job.timeEntries||[]).filter(e=>e.id!==entryId);
+  await dbPut('jobs', job);
 }
 
 /* ---- projektets prisinställningar (grundtimpris, tidskanaler, körkostnad) ---- */
@@ -455,7 +479,7 @@ function channelForMinute(job, minuteOfDay){
 }
 function laborCost(job){
   const rate = Number(job.hourlyRate)||DEFAULT_PRICE_DEFAULTS.hourlyRate;
-  const hours = Number(job.loggedHours)||0;
+  const hours = totalLoggedHours(job);
   const segments = job.workSegments||[]; // äldre jobb som loggades med den borttagna klockan
   if(!job.multiRatesEnabled || !(job.rateChannels||[]).length || !segments.length) return hours * rate;
   let cost = 0;
@@ -1707,7 +1731,7 @@ function vJobOversikt(job){
     </div>
 
     <div class="section-cards">
-      ${sectionCard('arbete', ICON.wrench, 'Arbete', job.loggedHours ? `${fmtHours(job.loggedHours)} arbetad tid` : (prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar'))}
+      ${sectionCard('arbete', ICON.wrench, 'Arbete', totalLoggedHours(job) ? `${fmtHours(totalLoggedHours(job))} arbetad tid` : (prog ? `${prog.done} av ${prog.target} klara` : 'Beskrivning, att göra, anteckningar'))}
       ${sectionCard('material', ICON.box, 'Material', jobMaterials.length ? `${jobMaterials.length} artiklar` : 'Inga artiklar ännu')}
       ${sectionCard('dokumentation', ICON.camera, 'Dokumentation', jobPhotos.length ? `${jobPhotos.length} bilder` : 'Bilder, ritningar, dokument')}
       ${sectionCard('kontroll', ICON.gauge, 'Kontroll', insp.total ? `${insp.done} av ${insp.total} klara` : 'Egenkontroll ej påbörjad')}
@@ -1718,13 +1742,34 @@ function vJobOversikt(job){
 }
 
 /* ---- Uppdrag: Arbete ---- */
+function vTimeEntryRows(job){
+  const entries = job.timeEntries||[];
+  if(!entries.length) return '';
+  return `<div class="card" style="padding:4px 16px;margin-top:12px">${entries.map(e=>`
+    <div class="checklist-row">
+      <div class="checklist-info">
+        <div class="checklist-name">${fmtDateSv(e.date)} · ${fmtHours(e.hours)}</div>
+        ${e.description ? `<div class="muted" style="font-size:13px;margin-top:2px">${esc(e.description)}</div>` : ''}
+      </div>
+      <button class="checklist-del" data-act="delete-time-entry" data-id="${e.id}" aria-label="Ta bort">${ICON.trash}</button>
+    </div>`).join('')}</div>`;
+}
 function vJobArbete(job){
+  const draft = st.timeEntryDraft || {};
   return `
   ${vWizHeader('Arbete', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
     <div class="section">
       <div class="subsection-title">Arbetad tid</div>
-      <div class="row gap-xs"><input type="number" inputmode="decimal" value="${job.loggedHours||0}" data-field="job-logged-hours" style="flex:1"><span class="muted">h</span></div>
+      ${vTimeEntryRows(job)}
+      <div class="add-form" style="margin-top:12px">
+        <div class="row2">
+          <input type="date" value="${esc(draft.date||todayISODate())}" data-field="time-entry-date">
+          <input type="number" inputmode="decimal" placeholder="Timmar" value="${esc(draft.hours||'')}" data-field="time-entry-hours">
+        </div>
+        <input type="text" placeholder="Kort beskrivning, t.ex. Uttag i källare" value="${esc(draft.description||'')}" data-field="time-entry-description">
+        <button class="primary-btn" data-act="add-time-entry">${ICON.plusSmall}<span>Lägg till</span></button>
+      </div>
     </div>
     <div class="section">
       <div class="subsection-title">Arbetsbeskrivning</div>
@@ -1902,7 +1947,7 @@ function vJobEkonomi(job){
     </div>
     <div class="section">
       <div class="summary-card" style="margin-top:0">
-        <div class="row between"><span class="muted">Arbetstid <span style="font-size:11px">(ändra i Arbete)</span></span><span>${fmtHours(job.loggedHours)}</span></div>
+        <div class="row between"><span class="muted">Arbetstid <span style="font-size:11px">(ändra i Arbete)</span></span><span>${fmtHours(totalLoggedHours(job))}</span></div>
         <div class="row between" style="margin-top:6px"><span class="muted">Arbetskostnad</span><span>${fmtKr(eco.labor)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="muted">Materialkostnad</span><span>${fmtKr(eco.material.cost)}</span></div>
         <div class="row between" style="margin-top:6px">
@@ -2050,7 +2095,7 @@ function vJobAvsluta(job){
   const insp = inspectionProgress(job.id);
   const usedCount = jobMaterials.filter(m=>m.kind!=='planned').length;
   const items = [
-    { label:'Tid', ok: (job.loggedHours||0)>0, okText: fmtHours(job.loggedHours), badText:'Ingen tid registrerad' },
+    { label:'Tid', ok: totalLoggedHours(job)>0, okText: fmtHours(totalLoggedHours(job)), badText:'Ingen tid registrerad' },
     { label:'Material', ok: usedCount>0, okText:`${usedCount} artiklar`, badText:'Inga artiklar registrerade' },
     { label:'Bilder', ok: jobPhotos.length>0, okText:`${jobPhotos.length} bilder`, badText:'Inga bilder' },
     { label:'Egenkontroll', ok: insp.total>0 && insp.done===insp.total, okText:'Klar', badText: insp.total ? `${insp.total-insp.done} punkter kvar` : 'Ingen kontroll påbörjad' },
@@ -2075,10 +2120,6 @@ function vJobAvsluta(job){
 }
 
 /* ---- Rapport via e-post (mailto med jobbets timmar, dagbok, material och nyckelinfo) ---- */
-function fmtDateSv(iso){
-  if(!iso) return '';
-  return new Date(iso).toLocaleDateString('sv-SE', { day:'2-digit', month:'2-digit', year:'numeric' });
-}
 function buildJobReport(job){
   const c = customerOf(job);
   const eco = jobEconomySummary(job);
@@ -2092,7 +2133,12 @@ function buildJobReport(job){
   lines.push(`Avslutat: ${fmtDateSv(job.finishedAt) || fmtDateSv(new Date().toISOString())}`);
   lines.push('');
   lines.push('ARBETSTID');
-  lines.push(fmtHours(job.loggedHours));
+  if(job.timeEntries && job.timeEntries.length){
+    job.timeEntries.forEach(e=>lines.push(`${fmtDateSv(e.date)} — ${fmtHours(e.hours)}${e.description?` — ${e.description}`:''}`));
+    lines.push(`Totalt: ${fmtHours(totalLoggedHours(job))}`);
+  } else {
+    lines.push(fmtHours(totalLoggedHours(job)));
+  }
   lines.push('');
   lines.push('DAGBOK');
   lines.push(job.notes && job.notes.trim() ? job.notes.trim() : 'Inga anteckningar registrerade.');
@@ -2126,7 +2172,7 @@ function vJobFaktura(job){
   ${vWizHeader('Fakturaunderlag', false, undefined, undefined, 'job-tab-back')}
   <div class="job-body">
     <div class="card">
-      <div class="row between"><span class="muted">Arbetstid</span><span class="bold">${fmtHours(job.loggedHours)}</span></div>
+      <div class="row between"><span class="muted">Arbetstid</span><span class="bold">${fmtHours(totalLoggedHours(job))}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Arbetskostnad (${fmtKr(job.hourlyRate||625)}/h${job.multiRatesEnabled?' + tidskanaler':''})</span><span class="bold">${fmtKr(eco.labor)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Material (${usedRows.length} artiklar)</span><span class="bold">${fmtKr(eco.material.cost)}</span></div>
       <div class="row between" style="margin-top:8px"><span class="muted">Påslag material (${job.markupPercent}%)</span><span class="bold">${fmtKr(eco.material.markupSum)}</span></div>
@@ -2184,6 +2230,7 @@ function vArbetslage(job){
 function vWorkNotePanel(){
   return `
   <div class="mat-panel" style="justify-content:center;padding:16px">
+    <button class="iconbtn" style="position:absolute;top:calc(16px + env(safe-area-inset-top,0px));left:16px" data-act="work-note-cancel" aria-label="Tillbaka">${ICON.chevronLeft}</button>
     <div class="card">
       <div class="label" style="margin-bottom:8px">Snabbanteckning</div>
       <textarea placeholder="Skriv en anteckning…" data-field="work-note-text">${esc(st.workNoteText||'')}</textarea>
@@ -2859,11 +2906,9 @@ $app.addEventListener('input', e=>{
     job.estimatedHours=Number(t.value)||0; dbPut('jobs', job);
     return;
   }
-  if(f==='job-logged-hours'){
-    const job=jobById(st.id); if(!job) return;
-    job.loggedHours=Number(t.value)||0; dbPut('jobs', job);
-    return;
-  }
+  if(f==='time-entry-date'){ st.timeEntryDraft=st.timeEntryDraft||{}; st.timeEntryDraft.date=t.value; return; }
+  if(f==='time-entry-hours'){ st.timeEntryDraft=st.timeEntryDraft||{}; st.timeEntryDraft.hours=t.value; return; }
+  if(f==='time-entry-description'){ st.timeEntryDraft=st.timeEntryDraft||{}; st.timeEntryDraft.description=t.value; return; }
   if(f==='rate-channel'){
     updateRateChannel(st.id, t.dataset.id, t.dataset.fieldname, t.value);
     return;
@@ -2980,8 +3025,8 @@ $app.addEventListener('click', async e=>{
     await seedInspectionIfEmpty(st.id);
     return render();
   }
-  if(a==='work-note'){ st.workNoteOpen=true; st.workNoteText=''; return render(); }
-  if(a==='work-note-cancel'){ st.workNoteOpen=false; return render(); }
+  if(a==='work-note'){ st.workNoteOpen=true; st.workNoteText=''; pushNav(); return render(); }
+  if(a==='work-note-cancel'){ history.back(); return; }
   if(a==='work-note-save'){
     const text=(st.workNoteText||'').trim();
     if(!text){ flash('Skriv något först'); return; }
@@ -2989,8 +3034,9 @@ $app.addEventListener('click', async e=>{
     const stamp = new Date().toLocaleString('sv-SE',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
     job.notes = (job.notes?job.notes+'\n\n':'') + `[${stamp}] ${text}`;
     await dbPut('jobs', job);
-    st.workNoteOpen=false; flash('Anteckning sparad');
-    return render();
+    flash('Anteckning sparad');
+    history.back();
+    return;
   }
   if(a==='work-ai'){
     if(!getAiKey()){ settingsOpen=true; pushNav(); flash('Lägg till en API-nyckel för AI-förslag'); return render(); }
@@ -3281,6 +3327,19 @@ $app.addEventListener('click', async e=>{
   }
   if(a==='delete-checklist-item'){
     await deleteChecklistItem(b.dataset.id);
+    return render();
+  }
+
+  /* ---- arbetad tid ---- */
+  if(a==='add-time-entry'){
+    const draft = st.timeEntryDraft||{};
+    if(!(Number(draft.hours)>0)){ flash('Ange antal timmar'); return; }
+    await addTimeEntry(st.id, draft);
+    st.timeEntryDraft = null;
+    return render();
+  }
+  if(a==='delete-time-entry'){
+    await deleteTimeEntry(st.id, b.dataset.id);
     return render();
   }
 
