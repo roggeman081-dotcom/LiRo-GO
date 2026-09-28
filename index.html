@@ -390,30 +390,37 @@ function keyboardDictationFallback(key,message){
   flash(message || 'Tryck på mikrofonen på iPhone-tangentbordet för att diktera',2600);
 }
 
+/* v79: robustare diktering för iPhone.
+   - Delresultat (interimResults) sparas löpande och skrivs direkt i textfältet utan
+     omritning, så du ser orden komma och inget går förlorat om iOS avslutar utan
+     slutresultat (vilket den ofta gör när man trycker stopp).
+   - Ingen render() medan mikrofonen är igång – bara när den har stängts helt. */
+let dictationSession = null;
+function showLiveTranscript(key, text){
+  const f=dictationFieldForKey(key);
+  if(f && typeof f.value==='string'){ f.value=text; }
+}
 function toggleDictate(key, onResult){
-  if(st.dictatingKey===key){
-    if(activeRecognition){ try{ activeRecognition.stop(); }catch{} }
-    st.dictatingKey=null;
-    render();
+  // Andra trycket = stoppa. Resultatet levereras i onend, inte här.
+  if(st.dictatingKey===key && dictationSession && dictationSession.key===key){
+    const sess=dictationSession;
+    sess.stopRequested=true;
+    try{ sess.rec.stop(); }catch{}
+    // Säkerhetsnät om iOS aldrig skickar onend.
+    setTimeout(()=>{ if(dictationSession===sess) sess.end(); },2500);
     return;
   }
 
-  if(activeRecognition){
-    try{ activeRecognition.abort(); }catch{}
-    activeRecognition=null;
-  }
+  if(dictationSession){ try{ dictationSession.rec.abort(); }catch{} dictationSession.end(true); }
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SR){
-    keyboardDictationFallback(key);
-    return;
-  }
+  if(!SR){ keyboardDictationFallback(key); return; }
 
   let rec;
   try{
     rec = new SR();
     rec.lang='sv-SE';
-    rec.interimResults=false;
+    rec.interimResults=true;
     rec.continuous=false;
     rec.maxAlternatives=1;
   }catch{
@@ -421,69 +428,73 @@ function toggleDictate(key, onResult){
     return;
   }
 
-  let started=false, gotResult=false, fallbackUsed=false;
-  const finish=(redraw=true)=>{
-    activeRecognition=null;
-    const was=st.dictatingKey;
-    st.dictatingKey=null;
-    // v78: rita om så knappen går tillbaka från "Lyssnar…" när mikrofonen stängts.
-    if(redraw && was) setTimeout(()=>{ if(!st.dictatingKey) render(); },0);
+  const sess={ key, rec, started:false, delivered:false, ended:false, text:'', finalText:'', stopRequested:false };
+  dictationSession=sess;
+  activeRecognition=rec;
+
+  sess.end=(silent)=>{
+    if(sess.ended) return;
+    sess.ended=true;
+    clearTimeout(startTimeout);
+    if(dictationSession===sess) dictationSession=null;
+    if(activeRecognition===rec) activeRecognition=null;
+    if(st.dictatingKey===key) st.dictatingKey=null;
+    if(silent) return;
+    const text=(sess.finalText||sess.text||'').trim();
+    if(text && !sess.delivered){ sess.delivered=true; onResult(text); }  // onResult ritar om
+    else render();
+    if(!text && !sess.errorShown) flash('Hördes inget. Tryck och prata direkt, tryck igen när du är klar.',2400);
   };
   const fallback=(message)=>{
-    if(fallbackUsed) return;
-    fallbackUsed=true;
-    finish(false);
+    sess.end(true);
     keyboardDictationFallback(key,message);
   };
 
   const startTimeout=setTimeout(()=>{
-    if(!started){
+    if(!sess.started){
       try{ rec.abort(); }catch{}
       fallback('Webbmikrofonen startade inte. Använd mikrofonen på iPhone-tangentbordet.');
     }
   },6000);
 
   rec.onstart=()=>{
-    started=true;
+    sess.started=true;
     clearTimeout(startTimeout);
     st.dictatingKey=key;
-    // Ingen render() här: på iOS kan en full DOM-omritning störa pågående SpeechRecognition.
+    // Visa "Lyssnar…" utan full omritning.
+    document.querySelectorAll('[data-act="dictate-material"],[data-v67="work-dictate-material"]').forEach(btn=>{
+      if(key!=='material') return;
+      btn.classList.add('mic-listening');
+      const sp=btn.querySelector('span'); if(sp) sp.textContent='Lyssnar… tryck när du är klar';
+    });
   };
   rec.onresult=(ev)=>{
-    gotResult=true;
-    const transcript=ev?.results?.[0]?.[0]?.transcript;
-    if(transcript) onResult(transcript);
-    try{ rec.stop(); }catch{}
+    let all='', fin='';
+    for(let i=0;i<(ev.results?.length||0);i++){
+      const r=ev.results[i], t=r?.[0]?.transcript||'';
+      all+=t; if(r.isFinal) fin+=t;
+    }
+    if(all.trim()) sess.text=all.trim();
+    if(fin.trim()) sess.finalText=fin.trim();
+    showLiveTranscript(key, sess.text);
   };
   rec.onerror=(ev)=>{
-    clearTimeout(startTimeout);
     const err=ev?.error||'';
+    if(err==='aborted' || err==='no-speech'){ return; } // onend tar hand om det
     if(err==='not-allowed'||err==='service-not-allowed'){
-      finish();
-      flash(dictateErrorText(err),2600);
-      return;
+      sess.errorShown=true; flash(dictateErrorText(err),2600); sess.end(); return;
     }
-    if(!gotResult && (err==='network'||err==='audio-capture')){
+    if(!sess.text && (err==='network'||err==='audio-capture')){
       fallback(dictateErrorText(err)+' Du kan även använda mikrofonen på tangentbordet.');
       return;
     }
-    finish();
-    flash(dictateErrorText(err),2200);
+    if(!sess.text){ sess.errorShown=true; flash(dictateErrorText(err),2200); }
   };
-  rec.onend=()=>{
-    clearTimeout(startTimeout);
-    if(!gotResult && started && !fallbackUsed){
-      finish();
-      return;
-    }
-    finish();
-  };
+  rec.onend=()=>{ sess.end(); };
 
-  activeRecognition=rec;
   try{
     rec.start();
   }catch{
-    clearTimeout(startTimeout);
     fallback('Taligenkänningen kunde inte starta. Använd mikrofonen på iPhone-tangentbordet.');
   }
 }

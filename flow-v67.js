@@ -128,6 +128,11 @@
         if(typeof flash==='function') flash('Diktering är inte tillgänglig just nu');
         return;
       }
+      // v79: pågår diktering redan är detta "stopp"-trycket – rita inte om, låt toggleDictate avsluta.
+      if(st.dictatingKey==='material'){
+        toggleDictate('material',function(){});
+        return;
+      }
       st.matPanel=true;
       st.matPanelMode='browse';
       st.matTab=st.matTab||'recent';
