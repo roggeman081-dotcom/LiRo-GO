@@ -1,11 +1,11 @@
 // Höj versionen när du laddar upp nya filer, så hämtar telefonen uppdateringen.
 // Tilläggslagren (*-vNN.js) laddas med vanliga <script>-taggar i index.html.
-// Nya lager: lägg till taggen i index.html OCH filnamnet i FILES nedan.
+// v83 materialassistent injiceras även i navigationen här för att kunna aktiveras utan att skriva om stora index.html.
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v82';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js', './barcode-polyfill.js', './zxing_reader.wasm'];
+const CACHE = 'lirogo-v83';
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js', './material-assistant-v83.js', './barcode-polyfill.js', './zxing_reader.wasm'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, {cache:'reload'})))).then(() => self.skipWaiting()));
@@ -19,6 +19,16 @@ self.addEventListener('activate', e => {
   );
 });
 
+async function appHtmlWithV83(){
+  const hit = await caches.match('./index.html');
+  const res = hit || await fetch('./index.html');
+  let html = await res.text();
+  if(!html.includes('material-assistant-v83.js')){
+    html = html.replace('</body>','<script src="./material-assistant-v83.js"></script>\n</body>');
+  }
+  return new Response(html,{status:200,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache'}});
+}
+
 self.addEventListener('fetch', e => {
   const req=e.request;
   if(req.method!=='GET' || new URL(req.url).origin!==location.origin) return;
@@ -28,10 +38,10 @@ self.addEventListener('fetch', e => {
   const isCatalog=url.pathname.endsWith('/katalog-el.json');
 
   if(isNavigation){
-    e.respondWith(
-      caches.match('./index.html').then(hit=>hit || fetch('./index.html'))
-        .catch(()=>caches.match('./index.html'))
-    );
+    e.respondWith(appHtmlWithV83().catch(async()=>{
+      const fallback=await caches.match('./index.html');
+      return fallback || fetch('./index.html');
+    }));
     return;
   }
 
