@@ -18,6 +18,7 @@
     .be-amount-v57{font-size:28px;font-weight:700;line-height:1.05;letter-spacing:-.02em}
     .be-target-v57{font-size:12px;color:var(--muted);margin-top:5px}
     .be-status-v57{font-size:13px;font-weight:600;margin-top:7px}
+    .be-inv-v87{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding:12px;border-radius:16px;border:1px solid var(--line)}.be-inv-v87 span{color:var(--muted);font-size:13px}.be-inv-v87 b{font-size:17px}
     .be-grid-v57{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:14px;text-align:left}
     .be-chip-v57{background:var(--surface2);border-radius:16px;padding:11px 12px}
     .be-chip-v57 b{display:block;font-size:15px}.be-chip-v57 span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
@@ -73,15 +74,18 @@
       }
       return total;
     }
-    const updated=new Date(job.updatedAt||job.createdAt||0);
-    if(updated>=start&&updated<end) return Math.max(0,effectiveLoggedHours(job))*base;
+    // v87: manuella timmar räknas på när jobbet avslutades (annars skapades) –
+    // inte senaste ändring, som flyttade alla timmar till innevarande månad vid minsta redigering.
+    const when=new Date(job.finishedAt||job.createdAt||0);
+    if(when>=start&&when<end) return Math.max(0,effectiveLoggedHours(job))*base;
     return 0;
   }
   function materialProfitThisMonthV57(start,end){
     let total=0;
     for(const m of (materialsV57||[])){
       if(m.kind==='planned') continue;
-      const when=new Date(m.updatedAt||m.createdAt||0);
+      // v87: när raden registrerades, inte senast ändrades.
+      const when=new Date(m.createdAt||m.updatedAt||0);
       if(!(when>=start&&when<end)) continue;
       const job=jobById(m.jobId);
       if(!job||job.isQuote) continue;
@@ -91,13 +95,29 @@
     }
     return total;
   }
+  // v87: fakturerat denna månad = uppdragets totalsumma exkl. moms för uppdrag markerade
+  // som fakturerade med fakturadatum i månaden.
+  function invoicedThisMonthV87(start,end){
+    let total=0,count=0;
+    for(const job of (jobs||[])){
+      if(!job||job.isQuote||job.status!=='invoiced'||!job.invoicedAt) continue;
+      const d=new Date(job.invoicedAt);
+      if(!(d>=start&&d<end)) continue;
+      const rows=(materialsV57||[]).filter(m=>m.jobId===job.id&&m.kind!=='planned');
+      const mat=calculateMaterialTotals(rows,job.markupPercent).total;
+      total+=mat+laborCost(job)+travelCost(job)+Math.max(0,toNumber(job.otherCosts,0));
+      count++;
+    }
+    return {total,count};
+  }
   function totalsV57(){
     const {start,end}=monthBoundsV57();
     const labor=(jobs||[]).reduce((s,j)=>s+laborThisMonthV57(j,start,end),0);
     const material=materialProfitThisMonthV57(start,end);
     const total=labor+material;
     const target=targetV57();
-    return {labor,material,total,target,pct:target>0?Math.max(0,(total/target)*100):0};
+    const inv=invoicedThisMonthV87(start,end);
+    return {labor,material,total,target,pct:target>0?Math.max(0,(total/target)*100):0,invoiced:inv.total,invoicedCount:inv.count};
   }
   function krV57(n){ return Math.round(Number(n)||0).toLocaleString('sv-SE')+' kr'; }
   function cardV57(){
@@ -107,7 +127,7 @@
     const diff=reached?t.total-t.target:t.target-t.total;
     return `<section class="be-v57 ${reached?'reached':''}" aria-label="Break-even denna månad">
       <div class="be-head-v57">
-        <div><div class="be-kicker-v57">Månadens mål</div><div class="be-title-v57">Mot break-even</div></div>
+        <div><div class="be-kicker-v57">Månadens mål · utfört arbete</div><div class="be-title-v57">Mot break-even</div></div>
         <button type="button" class="be-edit-v57" data-act="edit-break-even-v57">Ändra mål</button>
       </div>
       <div class="be-ring-wrap-v57"><div class="be-ring-v57" style="--p:${visual.toFixed(2)}">
@@ -121,7 +141,8 @@
         <div class="be-chip-v57"><b>${krV57(t.labor)}</b><span>Debiterad arbetstid</span></div>
         <div class="be-chip-v57"><b>${krV57(t.material)}</b><span>Materialvinst</span></div>
       </div>
-      <div class="be-foot-v57">Exkl. moms. Materialvinst räknas som registrerat inköpsvärde × uppdragets påslag.</div>
+      <div class="be-inv-v87"><span>Fakturerat denna månad</span><b>${krV57(t.invoiced)}</b></div>
+      <div class="be-foot-v57">Utfört arbete: timmar i arbetspass denna månad × timpris, plus påslag på material registrerat denna månad. Fakturerat: totalsumma för uppdrag markerade som fakturerade denna månad${t.invoicedCount?` (${t.invoicedCount} st)`:''}. Allt exkl. moms.</div>
     </section>`;
   }
 
