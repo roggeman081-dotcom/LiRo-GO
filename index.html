@@ -368,7 +368,9 @@ function dictationFieldForKey(key){
     workai:'[data-field="work-ai-question"]',
     ai:'[data-field="ai-desc"]',
     'home-liro':'[data-field="home-liro-question"]',
-    docv66:'[data-v66-field="note-text"]'
+    docv66:'[data-v66-field="note-text"]',
+    'job-notes':'[data-field="job-notes"]',
+    'job-changes':'[data-field="job-changes"]'
   };
   if(key==='material'){
     return $app.querySelector('[data-field="mat-name"]') || $app.querySelector('[data-field="mat-search"]');
@@ -396,9 +398,10 @@ function keyboardDictationFallback(key,message){
      slutresultat (vilket den ofta gör när man trycker stopp).
    - Ingen render() medan mikrofonen är igång – bara när den har stängts helt. */
 let dictationSession = null;
+const dictationLivePrefix = {}; // text som ska stå kvar före det dikterade (t.ex. befintlig dagbok)
 function showLiveTranscript(key, text){
   const f=dictationFieldForKey(key);
-  if(f && typeof f.value==='string'){ f.value=text; }
+  if(f && typeof f.value==='string'){ f.value=(dictationLivePrefix[key]||'')+text; }
 }
 function toggleDictate(key, onResult){
   // Andra trycket = stoppa. Resultatet levereras i onend, inte här.
@@ -468,8 +471,8 @@ function toggleDictate(key, onResult){
     clearTimeout(startTimeout);
     st.dictatingKey=key;
     // Visa "Lyssnar…" utan full omritning.
-    document.querySelectorAll('[data-act="dictate-material"],[data-v67="work-dictate-material"]').forEach(btn=>{
-      if(key!=='material') return;
+    const sel = key==='material' ? '[data-act="dictate-material"],[data-v67="work-dictate-material"]' : `[data-dict-key="${key}"]`;
+    document.querySelectorAll(sel).forEach(btn=>{
       btn.classList.add('mic-listening');
       const sp=btn.querySelector('span'); if(sp) sp.textContent='Lyssnar… tryck när du är klar';
     });
@@ -2577,10 +2580,12 @@ function vJobArbete(job){
     <div class="section">
       <div class="subsection-title">Tillägg & ändringar</div>
       <textarea placeholder="Nya kundönskemål eller ändringar mot ursprunglig plan…" data-field="job-changes">${esc(job.changes||'')}</textarea>
+      <button type="button" class="mat-dictate-main ${st.dictatingKey==='job-changes'?'mic-listening':''}" data-act="dictate-job-field" data-target="changes" data-dict-key="job-changes">${ICON.mic}<span>${st.dictatingKey==='job-changes'?'Lyssnar… tryck när du är klar':'Diktera tillägg/ändring'}</span></button>
     </div>
     <div class="section">
       <div class="subsection-title">Dagbok</div>
       <textarea placeholder="Vad gjordes, vad upptäcktes och vad behöver följas upp?" data-field="job-notes">${esc(job.notes||'')}</textarea>
+      <button type="button" class="mat-dictate-main ${st.dictatingKey==='job-notes'?'mic-listening':''}" data-act="dictate-job-field" data-target="notes" data-dict-key="job-notes">${ICON.mic}<span>${st.dictatingKey==='job-notes'?'Lyssnar… tryck när du är klar':'Diktera till dagboken'}</span></button>
     </div>
   </div>`;
 }
@@ -4254,6 +4259,28 @@ $app.addEventListener('click', async e=>{
     return render();
   }
 
+  if(a==='dictate-job-field'){
+    // v81: diktera dagbok / tillägg. Läggs till som ny rad med datum och tid, skriver aldrig över.
+    const job=jobById(st.id); if(!job) return;
+    const target=b.dataset.target==='changes'?'changes':'notes';
+    const key='job-'+target;
+    if(st.dictatingKey===key){ toggleDictate(key,()=>{}); return; } // andra trycket = stopp
+    const field=dictationFieldForKey(key);
+    const base=String((field&&typeof field.value==='string')?field.value:(job[target]||'')).replace(/\s+$/,'');
+    const d=new Date(), p=n=>String(n).padStart(2,'0');
+    const stamp=`${d.getDate()}/${d.getMonth()+1} ${p(d.getHours())}:${p(d.getMinutes())}: `;
+    const prefix=(base?base+'\n':'')+stamp;
+    dictationLivePrefix[key]=prefix;
+    toggleDictate(key, async (text)=>{
+      const j=jobById(st.id)||job;
+      j[target]=prefix+text.trim().replace(/^./,c=>c.toUpperCase());
+      j.updatedAt=new Date().toISOString();
+      await dbPut('jobs', j);
+      flash(target==='notes'?'Sparat i dagboken':'Tillägg sparat');
+      render();
+    });
+    return;
+  }
   if(a==='dictate-material'){
     toggleDictate('material', (text)=>{
       if(st.matPanelMode==='manual'){ st.matDraft = st.matDraft||{}; st.matDraft.name = text; }
