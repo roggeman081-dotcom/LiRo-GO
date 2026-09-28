@@ -167,7 +167,7 @@
   document.addEventListener('click',function(e){
     const b=e.target.closest&&e.target.closest('[data-act]');
     if(!b) return;
-    const materialActs=new Set(['bump-qty','save-material','delete-material','move-material-to-used','save-work-capture']);
+    const materialActs=new Set(['bump-qty','save-material','delete-material','move-material-to-used','save-work-capture','delete-job']);
     if(materialActs.has(b.dataset.act)) materialsDirtyV57=true;
   },true);
 })();

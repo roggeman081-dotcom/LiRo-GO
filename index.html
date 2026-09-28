@@ -1433,6 +1433,21 @@ async function addMaterial(jobId, input){
   await dbPut('materials',m); bumpMaterialUsage(m.eNr); return m;
 }
 async function deleteMaterial(id){ await dbDel('materials',id); }
+/* v86: radera ett uppdrag med allt som hör till det. Kunden lämnas kvar. */
+async function deleteJobCompletely(jobId){
+  for(const store of ['materials','photos','checklist','inspection']){
+    try{ const rows=await dbByJob(store,jobId); for(const r of rows) await dbDel(store,r.id); }catch(err){ console.warn('Kunde inte rensa',store,err); }
+  }
+  try{ for(const r of radar.filter(x=>x.jobId===jobId)) await dbDel('radar',r.id); }catch{}
+  await dbDel('jobs',jobId);
+  jobs=jobs.filter(j=>j.id!==jobId);
+  checklist=checklist.filter(x=>x.jobId!==jobId);
+  inspection=inspection.filter(x=>x.jobId!==jobId);
+  radar=radar.filter(x=>x.jobId!==jobId);
+  if(typeof jobPhotos!=='undefined') jobPhotos=[];
+  if(typeof jobMaterials!=='undefined') jobMaterials=[];
+  try{ window.statsDirtyV44=true; window.materialsDirtyV57=true; }catch{}
+}
 async function moveMaterialToUsed(id){
   const m=jobMaterials.find(x=>x.id===id); if(!m) return;
   m.kind='used'; m.updatedAt=new Date().toISOString(); await dbPut('materials',m);
@@ -2540,6 +2555,9 @@ function vJobOversikt(job){
       ${sectionCard('ekonomi', ICON.calc, 'Pris & debitering', `Totalt ${fmtKr(eco.subtotal)} exkl. moms`)}
       ${job.isQuote ? sectionCard('offert', ICON.sparkle, 'Offert', taxReductionType(job)==='rot'?'Preliminär kalkyl med ROT':taxReductionType(job)==='green'?'Preliminär kalkyl med Grön teknik':'Preliminär kalkyl') : ''}
     </div>
+    <div style="margin:28px 0 8px;text-align:center">
+      <button type="button" data-act="delete-job" data-id="${esc(job.id)}" style="font-size:14px;font-weight:600;padding:12px 16px;border-radius:14px;${st.confirmDeleteJob===job.id?'background:var(--pri-urgent);color:#fff':'color:var(--pri-urgent)'}">${st.confirmDeleteJob===job.id?'Tryck igen för att radera permanent':'Ta bort uppdrag'}</button>
+      ${st.confirmDeleteJob===job.id?'<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.4">Tar bort uppdraget med tid, material, bilder, kontroller och radarpunkter. Kunden finns kvar. Går inte att ångra – ta backup först om du är osäker.</div>':''}
   </div>`;
 }
 
@@ -3860,6 +3878,19 @@ $app.addEventListener('click', async e=>{
     return render();
   }
   if(a==='job-tab-back'){ history.back(); return; }
+  if(a==='delete-job'){
+    // v86: två tryck – första visar varning, andra raderar.
+    const id=b.dataset.id; const job=jobById(id); if(!job) return;
+    if(st.confirmDeleteJob!==id){
+      st.confirmDeleteJob=id; render();
+      clearTimeout(window._delJobT); window._delJobT=setTimeout(()=>{ if(st.confirmDeleteJob===id){ st.confirmDeleteJob=null; render(); } },6000);
+      return;
+    }
+    st.confirmDeleteJob=null;
+    await deleteJobCompletely(id);
+    flash('Uppdraget "'+(job.title||'')+'" är borttaget',2400);
+    st={view:'projects'}; pushNav(); return render();
+  }
   if(a==='set-job-status'){
     const job=jobById(st.id); if(!job) return;
     await setJobStatus(job.id,b.dataset.status);
