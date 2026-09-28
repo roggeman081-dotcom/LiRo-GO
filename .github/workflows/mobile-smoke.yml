@@ -70,6 +70,14 @@ jobs:
           const customerReport = fs.readFileSync('customer-report-v58.js','utf8');
           if (!customerReport.includes('measurementsV66') || !customerReport.includes('MÄTVÄRDEN')) throw new Error('Kundrapporten saknar mätvärden');
 
+          // v78: tilläggslagren ska laddas direkt av index.html, inte bara via service workern.
+          const layers = [...sw.matchAll(/'\.\/([a-z0-9-]+-v\d+\.js)'/g)].map(m => m[1]);
+          for (const l of layers) if (!html.includes(`src="./${l}"`)) throw new Error('index.html laddar inte lagret ' + l);
+          if (sw.includes('injectHomeOverlay')) throw new Error('sw.js injicerar fortfarande skript');
+          if (!refs.includes('zxing_reader.wasm') || !refs.includes('barcode-polyfill.js')) throw new Error('Streckkodsläsaren är inte offline-cachad');
+          if (fs.readFileSync('barcode-polyfill.js','utf8').includes('jsdelivr')) throw new Error('Streckkodsläsaren hämtar fortfarande från CDN');
+          if (!html.includes('async function shrinkPhoto(')) throw new Error('Fotokrympning saknas');
+
           console.log(JSON.stringify({ ok:true, jsFiles:jsFiles.length, inlineScripts:inline.length, cache:cache[1], precacheFiles:refs.length }, null, 2));
           NODE
 
@@ -192,6 +200,7 @@ jobs:
             const summary = await page.locator('body').innerText();
             if (!summary.includes('Testgatan 1')) throw new Error('Arbetsplatsadressen saknas i sammanfattningen');
             await page.locator('[data-act="wiz-submit"]').click();
+            await page.waitForFunction(() => st.view === 'job', null, { timeout:5000 });
             await page.getByText('Smoke Test Uppdrag', { exact:true }).first().waitFor({ state:'visible', timeout:5000 });
 
             const saved = await page.evaluate(() => {
@@ -223,9 +232,17 @@ jobs:
             const dismiss = page.locator('[data-act="dismiss-material-mention"]').first();
             await dismiss.waitFor({ state:'visible', timeout:5000 });
             await dismiss.click();
+            await page.waitForFunction(() => !document.querySelector('[data-act="dismiss-material-mention"]'), null, { timeout:5000 }).catch(() => {});
             if (await page.locator('[data-act="dismiss-material-mention"]').count()) {
               throw new Error('Materialförslaget gick inte att ta bort');
             }
+
+            // v78: ordsökning i valfri ordning i prislistan.
+            const search = await page.evaluate(async () => {
+              await ensureCatalog();
+              return { a: searchCatalog('jordat uttag', 5).length, b: searchCatalog('uttag jordat', 5).length };
+            });
+            if (!search.a || search.a !== search.b) throw new Error('Ordsökning i prislistan fungerar inte: ' + JSON.stringify(search));
 
             const criticalErrors = errors.filter(e => !e.includes('favicon') && !e.includes('Service Worker'));
             if (criticalErrors.length) throw new Error('Kärnapp JavaScript-fel: ' + criticalErrors.join(' | '));

@@ -1,12 +1,14 @@
 // Höj versionen när du laddar upp nya filer, så hämtar telefonen uppdateringen.
+// Tilläggslagren (*-vNN.js) laddas med vanliga <script>-taggar i index.html.
+// Nya lager: lägg till taggen i index.html OCH filnamnet i FILES nedan.
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v77';
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js'];
+const CACHE = 'lirogo-v78';
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js', './barcode-polyfill.js', './zxing_reader.wasm'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, {cache:'reload'})))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -16,30 +18,6 @@ self.addEventListener('activate', e => {
       .then(() => self.clients.claim())
   );
 });
-
-function injectHomeOverlay(res){
-  if(!res) return res;
-  return res.clone().text().then(text => {
-    if(!text.includes('rot-v51.js')) text = text.replace('</body>', '<script src="./rot-v51.js?v=77"></script>\n</body>');
-    if(!text.includes('home-v44.js')) text = text.replace('</body>', '<script src="./home-v44.js?v=77"></script>\n</body>');
-    if(!text.includes('home-v44-safe.js')) text = text.replace('</body>', '<script src="./home-v44-safe.js?v=77"></script>\n</body>');
-    if(!text.includes('theme-v46.js')) text = text.replace('</body>', '<script src="./theme-v46.js?v=77"></script>\n</body>');
-    if(!text.includes('assignment-v52.js')) text = text.replace('</body>', '<script src="./assignment-v52.js?v=77"></script>\n</body>');
-    if(!text.includes('report-v53.js')) text = text.replace('</body>', '<script src="./report-v53.js?v=77"></script>\n</body>');
-    if(!text.includes('finish-v55.js')) text = text.replace('</body>', '<script src="./finish-v55.js?v=77"></script>\n</body>');
-    if(!text.includes('nav-v56.js')) text = text.replace('</body>', '<script src="./nav-v56.js?v=77"></script>\n</body>');
-    if(!text.includes('break-even-v57.js')) text = text.replace('</body>', '<script src="./break-even-v57.js?v=77"></script>\n</body>');
-    if(!text.includes('customer-report-v58.js')) text = text.replace('</body>', '<script src="./customer-report-v58.js?v=77"></script>\n</body>');
-    if(!text.includes('export-v59.js')) text = text.replace('</body>', '<script src="./export-v59.js?v=77"></script>\n</body>');
-    if(!text.includes('catalog-v60.js')) text = text.replace('</body>', '<script src="./catalog-v60.js?v=77"></script>\n</body>');
-    if(!text.includes('material-scope-v61.js')) text = text.replace('</body>', '<script src="./material-scope-v61.js?v=77"></script>\n</body>');
-    if(!text.includes('no-demo-v62.js')) text = text.replace('</body>', '<script src="./no-demo-v62.js?v=77"></script>\n</body>');
-    if(!text.includes('backup-v64.js')) text = text.replace('</body>', '<script src="./backup-v64.js?v=77"></script>\n</body>');
-    if(!text.includes('document-job-v66.js')) text = text.replace('</body>', '<script src="./document-job-v66.js?v=77"></script>\n</body>');
-    if(!text.includes('flow-v67.js')) text = text.replace('</body>', '<script src="./flow-v67.js?v=77"></script>\n</body>');
-    return new Response(text,{status:res.status,statusText:res.statusText,headers:res.headers});
-  });
-}
 
 self.addEventListener('fetch', e => {
   const req=e.request;
@@ -51,30 +29,28 @@ self.addEventListener('fetch', e => {
 
   if(isNavigation){
     e.respondWith(
-      caches.match('./index.html').then(hit=>{
-        const source=hit || fetch('./index.html');
-        return Promise.resolve(source).then(injectHomeOverlay);
-      }).catch(()=>caches.match('./index.html').then(injectHomeOverlay))
+      caches.match('./index.html').then(hit=>hit || fetch('./index.html'))
+        .catch(()=>caches.match('./index.html'))
     );
     return;
   }
 
   if(isCatalog){
-    e.respondWith(
-      fetch(req).then(res=>{
-        if(!res.ok) throw new Error('HTTP '+res.status);
-        const copy=res.clone();
-        caches.open('lirogo-catalog-v60').then(cache=>cache.put('./katalog-el.json',copy));
-        return res;
-      }).catch(async()=>{
-        const hit=await caches.match('./katalog-el.json',{ignoreSearch:true});
-        if(hit) return hit;
-        return new Response(JSON.stringify({error:'catalog-unavailable'}),{
-          status:503,
-          headers:{'Content-Type':'application/json'}
-        });
-      })
-    );
+    // Prislistan: lokal kopia först (offline + sparar mobildata). ?refresh går mot nätet.
+    const toNetwork=()=>fetch(req).then(res=>{
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const copy=res.clone();
+      caches.open('lirogo-catalog-v60').then(cache=>cache.put('./katalog-el.json',copy));
+      return res;
+    });
+    const unavailable=()=>new Response(JSON.stringify({error:'catalog-unavailable'}),{
+      status:503,headers:{'Content-Type':'application/json'}
+    });
+    if(url.searchParams.has('refresh')){
+      e.respondWith(toNetwork().catch(async()=>(await caches.match('./katalog-el.json',{ignoreSearch:true}))||unavailable()));
+    }else{
+      e.respondWith(caches.match('./katalog-el.json',{ignoreSearch:true}).then(hit=>hit||toNetwork()).catch(unavailable));
+    }
     return;
   }
 
