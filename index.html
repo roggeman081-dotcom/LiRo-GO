@@ -350,28 +350,136 @@ function flash(t, ms){ const s=document.getElementById('status'); s.textContent=
    tangentbordet) redan fungerar utmärkt i alla textfält utan vår kod. */
 const DICTATION_SUPPORTED = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 let activeRecognition = null;
+
 function dictateErrorText(err){
-  if(err==='not-allowed' || err==='service-not-allowed') return 'Mikrofonen nekades. Kolla appens mikrofonbehörighet i telefonens inställningar.';
+  if(err==='not-allowed' || err==='service-not-allowed') return 'Mikrofonen nekades. Kontrollera mikrofonbehörigheten för LiRo GO/Safari.';
   if(err==='no-speech') return 'Hördes inget. Försök igen.';
   if(err==='audio-capture') return 'Hittar ingen mikrofon.';
+  if(err==='network') return 'Taligenkänningen fick nätverksfel. Försök igen.';
   return 'Kunde inte tolka talet, försök igen.';
 }
+
+function dictationFieldForKey(key){
+  const selectors={
+    radar:'[data-field="radar-draft"]',
+    workcapture:'[data-field="work-capture-text"]',
+    workai:'[data-field="work-ai-question"]',
+    ai:'[data-field="ai-desc"]',
+    'home-liro':'[data-field="home-liro-question"]',
+    docv66:'[data-v66-field="note-text"]'
+  };
+  if(key==='material'){
+    return $app.querySelector('[data-field="mat-name"]') || $app.querySelector('[data-field="mat-search"]');
+  }
+  return selectors[key] ? $app.querySelector(selectors[key]) : null;
+}
+
+function keyboardDictationFallback(key,message){
+  const field=dictationFieldForKey(key);
+  if(field){
+    try{
+      field.focus({preventScroll:false});
+      if(typeof field.setSelectionRange==='function'){
+        const n=String(field.value||'').length;
+        field.setSelectionRange(n,n);
+      }
+    }catch{}
+  }
+  flash(message || 'Tryck på mikrofonen på iPhone-tangentbordet för att diktera',2600);
+}
+
 function toggleDictate(key, onResult){
-  if(!DICTATION_SUPPORTED) return;
-  if(st.dictatingKey===key){ if(activeRecognition) activeRecognition.stop(); return; }
-  if(activeRecognition) activeRecognition.stop();
+  if(st.dictatingKey===key){
+    if(activeRecognition){ try{ activeRecognition.stop(); }catch{} }
+    st.dictatingKey=null;
+    return;
+  }
+
+  if(activeRecognition){
+    try{ activeRecognition.abort(); }catch{}
+    activeRecognition=null;
+  }
+
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const rec = new SR(); rec.lang='sv-SE'; rec.interimResults=false;
-  let started=false;
-  const startTimeout = setTimeout(()=>{
-    if(!started){ try{ rec.stop(); }catch(e){} st.dictatingKey=null; render(); flash('Mikrofonen svarade inte, försök igen'); }
-  }, 4000);
-  rec.onstart = ()=>{ started=true; clearTimeout(startTimeout); st.dictatingKey=key; render(); };
-  rec.onresult = (ev)=>{ onResult(ev.results[0][0].transcript); };
-  rec.onerror = (ev)=>{ clearTimeout(startTimeout); flash(dictateErrorText(ev.error)); };
-  rec.onend = ()=>{ clearTimeout(startTimeout); activeRecognition=null; st.dictatingKey=null; render(); };
-  activeRecognition = rec;
-  rec.start();
+  if(!SR){
+    keyboardDictationFallback(key);
+    return;
+  }
+
+  let rec;
+  try{
+    rec = new SR();
+    rec.lang='sv-SE';
+    rec.interimResults=false;
+    rec.continuous=false;
+    rec.maxAlternatives=1;
+  }catch{
+    keyboardDictationFallback(key);
+    return;
+  }
+
+  let started=false, gotResult=false, fallbackUsed=false;
+  const finish=()=>{
+    activeRecognition=null;
+    st.dictatingKey=null;
+  };
+  const fallback=(message)=>{
+    if(fallbackUsed) return;
+    fallbackUsed=true;
+    finish();
+    keyboardDictationFallback(key,message);
+  };
+
+  const startTimeout=setTimeout(()=>{
+    if(!started){
+      try{ rec.abort(); }catch{}
+      fallback('Webbmikrofonen startade inte. Använd mikrofonen på iPhone-tangentbordet.');
+    }
+  },6000);
+
+  rec.onstart=()=>{
+    started=true;
+    clearTimeout(startTimeout);
+    st.dictatingKey=key;
+    // Ingen render() här: på iOS kan en full DOM-omritning störa pågående SpeechRecognition.
+  };
+  rec.onresult=(ev)=>{
+    gotResult=true;
+    const transcript=ev?.results?.[0]?.[0]?.transcript;
+    if(transcript) onResult(transcript);
+    try{ rec.stop(); }catch{}
+  };
+  rec.onerror=(ev)=>{
+    clearTimeout(startTimeout);
+    const err=ev?.error||'';
+    if(err==='not-allowed'||err==='service-not-allowed'){
+      finish();
+      flash(dictateErrorText(err),2600);
+      return;
+    }
+    if(!gotResult && (err==='network'||err==='audio-capture')){
+      fallback(dictateErrorText(err)+' Du kan även använda mikrofonen på tangentbordet.');
+      return;
+    }
+    finish();
+    flash(dictateErrorText(err),2200);
+  };
+  rec.onend=()=>{
+    clearTimeout(startTimeout);
+    if(!gotResult && started && !fallbackUsed){
+      finish();
+      return;
+    }
+    finish();
+  };
+
+  activeRecognition=rec;
+  try{
+    rec.start();
+  }catch{
+    clearTimeout(startTimeout);
+    fallback('Taligenkänningen kunde inte starta. Använd mikrofonen på iPhone-tangentbordet.');
+  }
 }
 
 async function createCustomer(input){
