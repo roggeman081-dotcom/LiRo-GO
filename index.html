@@ -342,13 +342,11 @@ function esc(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 function flash(t, ms){ const s=document.getElementById('status'); s.textContent=t; s.style.opacity=1; clearTimeout(flash.t); flash.t=setTimeout(()=>s.style.opacity=0, ms||1200); }
 
 /* ---- diktering (delad hjälpfunktion för alla mikrofonknappar) ----
-   Safari (iOS och macOS) har aldrig implementerat SpeechRecognition —
-   bara Chrome/Edge/Android WebView gör det. Det går inte att polyfilla
-   (det finns ingen motsvarande inbyggd taligenkänning att haka i), så
-   i Safari döljs våra egna mikrofonknappar helt och vi litar på att
-   tangentbordets egen dikteringsknapp (mikrofon-ikonen på själva
-   tangentbordet) redan fungerar utmärkt i alla textfält utan vår kod. */
-const DICTATION_SUPPORTED = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+   Använder Web Speech där det fungerar. På iPhone/iPad finns en säker
+   fallback som fokuserar rätt textfält så Apples tangentbordsdiktering
+   kan användas även om SpeechRecognition strular i PWA/Safari. */
+const WEB_SPEECH_SUPPORTED = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+const DICTATION_SUPPORTED = true;
 let activeRecognition = null;
 
 function dictateErrorText(err){
