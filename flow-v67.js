@@ -68,16 +68,12 @@
   if(typeof oldOverview==='function'){
     window.vJobOversikt=function(job){
       let html=oldOverview(job);
-      // Den gamla separata huvudknappen tas bort här för att inte dubblera
-      // "Jobba med uppdraget". Funktionerna finns kvar i det nya trefasflödet.
       html=html.replace(/<div style="margin-top:20px">[\s\S]*?<\/div>\s*(?=\s*<div class="section">|\s*<div class="card"|\s*<div class="section-cards">)/,'');
       const cls=st.flowV67More?'job-body flow67-job flow67-more':'job-body flow67-job';
       html=html.replace('<div class="job-body">','<div class="'+cls+'">');
       const marker='<div class="card">';
       const idx=html.indexOf(marker);
       if(idx>=0){
-        const end=html.indexOf('</div>',idx);
-        // Lägg flödet direkt efter job-body-start för maximal tydlighet.
         html=html.replace('<div class="'+cls+'">','<div class="'+cls+'">'+phaseMarkup(job));
       }else{
         html=html.replace('</div>',phaseMarkup(job)+'</div>');
@@ -91,15 +87,29 @@
     window.vArbetslage=function(job){
       let html=oldWork(job);
       const target='<button class="work-btn" data-act="work-goto-kontroll">';
-      if(html.includes(target) && !html.includes('data-v67="work-measure"')){
-        const btn='<button class="work-btn flow67-work-measure" data-v67="work-measure">'+(ICON.gauge||'')+'<span>Mätvärde</span></button>';
-        html=html.replace(target,btn+target);
+      if(html.includes(target)){
+        let inserts='';
+        if(!html.includes('data-v67="work-dictate-material"')){
+          inserts+='<button class="work-btn" data-v67="work-dictate-material">'+(ICON.mic||'')+'<span>Diktera material</span></button>';
+        }
+        if(!html.includes('data-v67="work-measure"')){
+          inserts+='<button class="work-btn flow67-work-measure" data-v67="work-measure">'+(ICON.gauge||'')+'<span>Mätvärde</span></button>';
+        }
+        if(inserts) html=html.replace(target,inserts+target);
       }
       return html;
     };
   }
 
   document.addEventListener('click',function(e){
+    const ai=e.target.closest&&e.target.closest('[data-act="work-ai"]');
+    if(ai && typeof getAiKey==='function' && !getAiKey()){
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if(typeof flash==='function') flash('LiRo AI saknar API-nyckel. Du stannar kvar i uppdraget. Lägg in nyckeln under Inställningar när du vill aktivera AI.',3600);
+      return;
+    }
+
     const el=e.target.closest&&e.target.closest('[data-v67]');
     if(!el) return;
     const act=el.dataset.v67;
@@ -108,6 +118,33 @@
       e.preventDefault();
       st.flowV67More=!st.flowV67More;
       render();
+      return;
+    }
+
+    if(act==='work-dictate-material'){
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if(typeof toggleDictate!=='function'){
+        if(typeof flash==='function') flash('Diktering är inte tillgänglig just nu');
+        return;
+      }
+      st.matPanel=true;
+      st.matPanelMode='browse';
+      st.matTab=st.matTab||'recent';
+      st.matSearch='';
+      st.matDraft={};
+      render();
+      setTimeout(function(){
+        toggleDictate('material',function(text){
+          if(st.matPanelMode==='manual'){
+            st.matDraft=st.matDraft||{};
+            st.matDraft.name=text;
+          }else{
+            st.matSearch=text;
+          }
+          render();
+        });
+      },0);
       return;
     }
 
