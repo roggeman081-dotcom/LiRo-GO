@@ -403,6 +403,16 @@ function showLiveTranscript(key, text){
   const f=dictationFieldForKey(key);
   if(f && typeof f.value==='string'){ f.value=(dictationLivePrefix[key]||'')+text; }
 }
+// v82: kom ihåg vilken mikrofonknapp som trycktes, så den kan bli röd direkt.
+let lastDictateButton=null;
+document.addEventListener('click',e=>{
+  const b=e.target.closest && e.target.closest('[data-act^="dictate"],[data-v67="work-dictate-material"]');
+  if(b) lastDictateButton=b;
+},true);
+function markDictateButton(on){
+  const b=lastDictateButton; if(!b || !b.isConnected) return;
+  b.classList.toggle('mic-listening',!!on);
+}
 function toggleDictate(key, onResult){
   // Andra trycket = stoppa. Resultatet levereras i onend, inte här.
   if(st.dictatingKey===key && dictationSession && dictationSession.key===key){
@@ -434,12 +444,18 @@ function toggleDictate(key, onResult){
   }
 
   const sess={ key, rec, started:false, delivered:false, ended:false, text:'', finalText:'', stopRequested:false };
+  // Direkt respons i trycket – annars ser det ut som att inget händer medan iOS startar mikrofonen.
+  markDictateButton(true);
+  flash('Lyssnar – prata nu',1600);
   dictationSession=sess;
   activeRecognition=rec;
 
   sess.end=(silent)=>{
     if(sess.ended) return;
     sess.ended=true;
+    // Släpp mikrofonen helt om iOS inte själv avslutat – annars kan nästa start misslyckas tyst.
+    if(!sess.gotEnd){ try{ rec.abort(); }catch{} }
+    markDictateButton(false);
     clearTimeout(startTimeout); clearTimeout(sess.silenceTimer); clearTimeout(sess.maxTimer); clearTimeout(sess.liveTimer);
     if(dictationSession===sess) dictationSession=null;
     if(activeRecognition===rec) activeRecognition=null;
@@ -460,7 +476,7 @@ function toggleDictate(key, onResult){
       try{ rec.abort(); }catch{}
       fallback('Webbmikrofonen startade inte. Använd mikrofonen på iPhone-tangentbordet.');
     }
-  },6000);
+  },4000);
 
   // Avsluta själv: 1,6 s tystnad efter senaste ordet, eller max 20 s totalt.
   const stopSoon=()=>{ try{ rec.stop(); }catch{} setTimeout(()=>sess.end(),700); };
@@ -503,7 +519,9 @@ function toggleDictate(key, onResult){
     const err=ev?.error||'';
     if(err==='aborted' || err==='no-speech'){ return; } // onend tar hand om det
     if(err==='not-allowed'||err==='service-not-allowed'){
-      sess.errorShown=true; flash(dictateErrorText(err),2600); sess.end(); return;
+      // Vanligt i hemskärmsappar på iPhone: gå direkt till tangentbordets mikrofon.
+      fallback(dictateErrorText(err)+' Använd mikrofonen på tangentbordet i stället.');
+      return;
     }
     if(!sess.text && (err==='network'||err==='audio-capture')){
       fallback(dictateErrorText(err)+' Du kan även använda mikrofonen på tangentbordet.');
@@ -511,7 +529,7 @@ function toggleDictate(key, onResult){
     }
     if(!sess.text){ sess.errorShown=true; flash(dictateErrorText(err),2200); }
   };
-  rec.onend=()=>{ sess.end(); };
+  rec.onend=()=>{ sess.gotEnd=true; sess.end(); };
 
   try{
     rec.start();
