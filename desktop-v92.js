@@ -116,25 +116,67 @@
       }
 
       .mat-panel{
-        max-width:980px;
-        margin:0 auto;
+        left:116px!important;
+        right:0!important;
+        top:0!important;
+        bottom:0!important;
+        max-width:none!important;
+        width:auto!important;
+        margin:0!important;
+        padding:24px 32px 56px;
+        background:var(--bg);
       }
 
+      .mat-panel-head,
       .settings-body,
       .mat-panel-list{
-        max-width:920px;
+        max-width:1280px;
         width:100%;
         margin:0 auto;
       }
 
-      .job-body{
-        max-width:1080px;
-        margin:0 auto;
+      .mat-panel-head{
+        padding:0 0 18px!important;
       }
 
-      .wiz-body{
-        max-width:900px;
+      .settings-body,
+      .mat-panel-list{
+        padding-left:0!important;
+        padding-right:0!important;
+      }
+
+      .job-body{
+        max-width:1180px;
         margin:0 auto;
+        padding-left:0!important;
+        padding-right:0!important;
+      }
+
+      .wiz-header,
+      .wiz-steps,
+      .wiz-body{
+        max-width:920px;
+        width:100%;
+        margin-left:auto!important;
+        margin-right:auto!important;
+      }
+
+      .wiz-body{padding-left:0!important;padding-right:0!important}
+
+      .wiz-footer{
+        left:calc(50% + 58px)!important;
+        right:auto!important;
+        transform:translateX(-50%)!important;
+        max-width:920px!important;
+        width:calc(100% - 180px)!important;
+        padding-left:0!important;
+        padding-right:0!important;
+      }
+
+      .work-screen{
+        left:116px!important;
+        right:0!important;
+        max-width:none!important;
       }
     }
   `;
