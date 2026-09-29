@@ -343,6 +343,49 @@ jobs:
             const radarState = await page.evaluate(() => ({view:st.view,settingsOpen}));
             if (radarState.view!=='radar' || radarState.settingsOpen) throw new Error('Radar stängde inte Inställningar direkt: '+JSON.stringify(radarState));
 
+            // Desktop: Materialpanelen och Fråga LiRo ska vara rena arbetsytor, inte lager över gammal vy.
+            await page.evaluate(async () => {
+              const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
+              await loadJobDetail(j.id);
+              st={view:'job',id:j.id,jobTab:'material'};
+              settingsOpen=false; calendarOpen=false; render();
+            });
+            await page.locator('[data-act="open-mat-panel"]').click();
+            await page.getByText('Material', { exact:true }).first().waitFor({state:'visible',timeout:5000});
+            const materialPanelState=await page.evaluate(()=>{
+              const p=document.querySelector('.mat-panel')?.getBoundingClientRect();
+              return {left:p?.left||0,width:p?.width||0,viewport:innerWidth,matPanel:!!st.matPanel};
+            });
+            if (!materialPanelState.matPanel || materialPanelState.left<100 || materialPanelState.width<1000) throw new Error('Materialpanelen är inte desktop-anpassad: '+JSON.stringify(materialPanelState));
+            const liroButton=page.locator('[data-mat83="open"]').first();
+            if (await liroButton.count()) {
+              await liroButton.click();
+              const liroState=await page.evaluate(()=>({matPanel:!!st.matPanel,mode:st.matPanelMode,settingsOpen}));
+              if (!liroState.matPanel || liroState.mode!=='liro83' || liroState.settingsOpen) throw new Error('Fråga LiRo öppnade fel lager: '+JSON.stringify(liroState));
+            }
+            await page.locator('.bottomnav [data-act="nav-projects"]').click();
+            const cleanAfterMaterial=await page.evaluate(()=>({view:st.view,matPanel:!!st.matPanel,settingsOpen}));
+            if (cleanAfterMaterial.view!=='projects' || cleanAfterMaterial.matPanel || cleanAfterMaterial.settingsOpen) throw new Error('Materialpanelen stängdes inte av huvudmenyn: '+JSON.stringify(cleanAfterMaterial));
+
+            // Projektspecifika priser ska kunna ändras och sparas utan att globala standardpriser påverkas.
+            await page.evaluate(async () => {
+              const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
+              await loadJobDetail(j.id);
+              st={view:'job',id:j.id,jobTab:'priser'};
+              settingsOpen=false; render();
+            });
+            await page.locator('[data-field="job-hourly-rate"]').fill('777');
+            await page.locator('[data-act="set-job-travel-mode"][data-mode="fixed"]').click();
+            await page.locator('[data-field="job-travel-fixed"]').fill('444');
+            await page.locator('[data-field="job-travel-visits"]').fill('2');
+            await page.waitForTimeout(100);
+            const priceSaved=await page.evaluate(async ()=>{
+              const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
+              const dbj=(await dbAll('jobs')).find(x=>x.id===j.id);
+              return {hourlyRate:dbj.hourlyRate,travelMode:dbj.travelMode,travelFixedFee:dbj.travelFixedFee,travelVisits:dbj.travelVisits};
+            });
+            if (priceSaved.hourlyRate!==777 || priceSaved.travelMode!=='fixed' || priceSaved.travelFixedFee!==444 || priceSaved.travelVisits!==2) throw new Error('Uppdragspriser sparades inte korrekt: '+JSON.stringify(priceSaved));
+
             const criticalErrors = errors.filter(e => !e.includes('favicon') && !e.includes('Service Worker'));
             if (criticalErrors.length) throw new Error('Kärnapp JavaScript-fel: ' + criticalErrors.join(' | '));
 
