@@ -75,7 +75,22 @@
     if(!b) return;
     const act=b.dataset.act;
 
-    if(['nav-home','nav-projects','open-radar'].includes(act)){
+    if(act==='nav-home'){
+      // Hem ska alltid vara en genväg hela vägen hem, även från öppna paneler.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if(typeof settingsOpen!=='undefined') settingsOpen=false;
+      if(typeof calendarOpen!=='undefined') calendarOpen=false;
+      try{
+        if(typeof scannerFrame!=='undefined'&&scannerFrame){ cancelAnimationFrame(scannerFrame); scannerFrame=null; }
+        if(typeof scannerStream!=='undefined'&&scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream=null; }
+      }catch{}
+      st={view:'home'};
+      render();
+      return;
+    }
+
+    if(['nav-projects','open-radar'].includes(act)){
       if(typeof settingsOpen!=='undefined') settingsOpen=false;
       if(typeof calendarOpen!=='undefined') calendarOpen=false;
       if(st) st.settingsTab=undefined;
