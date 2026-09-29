@@ -574,6 +574,12 @@ async function createJob(input){
     estimatedHours:0, otherCosts:0, taxReductionType:'none', greenTechType:null,
     showRot:false, invoiceReady:false
   };
+  if(input.price){
+    const p=input.price;
+    if(Number.isFinite(p.rate)) j.hourlyRate=p.rate;
+    if(['none','fixed','km'].includes(p.mode)) j.travelMode=p.mode;
+    if(Number.isFinite(p.amount)){ if(p.mode==='km') j.travelPerKm=p.amount; else if(p.mode==='fixed') j.travelFixedFee=p.amount; }
+  }
   await dbPut('jobs',j); jobs.push(j); return j;
 }
 function jobById(id){ return jobs.find(j=>j.id===id); }
@@ -1664,7 +1670,32 @@ function emptyDraft(){
       isCompany:false,orgNumber:'',invoiceAddress:'',invoicePostalCode:'',invoiceCity:'',invoiceReference:'',glnNumber:''},
     worksite:{useCustomerAddress:true, address:'', postalCode:'', city:''},
     title:'', workType:null, description:'', plannedDate:'', plannedTime:'', priority:'normal', isQuote:false,
-    checklist:[] };
+    checklist:[], rate:'', travelMode:null, travelAmount:'' };
+}
+/* v88: pris per uppdrag redan i Nytt uppdrag. Tomt = grundinställningen. */
+function draftPrice(){
+  const d=getGlobalPriceDefaults();
+  const mode=draft.travelMode||d.travelMode||'fixed';
+  const rate=draft.rate!==''&&draft.rate!=null?Math.max(0,Number(draft.rate)||0):(Number(d.hourlyRate)||625);
+  const defAmount=mode==='km'?(Number(d.travelPerKm)||8):(Number(d.travelFixedFee)||395);
+  const amount=draft.travelAmount!==''&&draft.travelAmount!=null?Math.max(0,Number(draft.travelAmount)||0):defAmount;
+  return {rate,mode,amount,defaults:d,defAmount};
+}
+function priceText(rate,mode,amount){
+  const t=mode==='none'?'ingen framkörning':mode==='km'?`${fmtKr(amount)}/km`:`framkörning ${fmtKr(amount)}`;
+  return `${fmtKr(rate)}/h · ${t}`;
+}
+function vDraftPriceField(){
+  const p=draftPrice();
+  const tab=(m,l)=>`<button type="button" class="pill ${p.mode===m?'on':''}" style="border:0;cursor:pointer;padding:8px 14px" data-act="set-draft-travel" data-mode="${m}">${l}</button>`;
+  return `
+    <div class="field">
+      <span class="label">Pris för detta uppdrag</span>
+      <span class="muted" style="font-size:12px;display:block;margin-bottom:8px">Lämna tomt för ditt grundpris (${esc(priceText(Number(p.defaults.hourlyRate)||625,p.defaults.travelMode||'fixed',p.defaults.travelMode==='km'?(Number(p.defaults.travelPerKm)||8):(Number(p.defaults.travelFixedFee)||395)))}).</span>
+      <div class="row gap-xs"><input type="number" inputmode="decimal" placeholder="${esc(String(Number(p.defaults.hourlyRate)||625))}" value="${esc(draft.rate)}" data-field="draft-rate" style="flex:1"><span class="muted">kr/h</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${tab('fixed','Framkörning')}${tab('km','Per km')}${tab('none','Ingen')}</div>
+      ${p.mode==='none'?'':`<div class="row gap-xs" style="margin-top:10px"><input type="number" inputmode="decimal" placeholder="${esc(String(p.defAmount))}" value="${esc(draft.travelAmount)}" data-field="draft-travel-amount" style="flex:1"><span class="muted">${p.mode==='km'?'kr/km':'kr per tillfälle'}</span></div>`}
+    </div>`;
 }
 function draftPlannedAt(){
   if(!draft.plannedDate) return null;
@@ -2114,6 +2145,7 @@ function vStepDetails(){
       <span class="label">Prioritet</span>
       <div class="pri-row">${pri}</div>
     </div>
+    ${vDraftPriceField()}
     <div class="field">
       <span class="label">Att göra</span>
       <span class="muted" style="font-size:12px;display:block;margin-bottom:8px">T.ex. "Uttag" med antal 4 — då visas en förloppsstapel på uppdraget som fylls i takt med att du bockar av dem.</span>
@@ -2154,7 +2186,8 @@ function vStepSummary(){
     ['Uppdrag', draft.title],
     ['Typ', draft.workType?WORK_TYPE_LABEL[draft.workType]:''],
     ['Planerad tid', fmtDateTime(draftPlannedAt())],
-    ['Status', draft.isQuote?'Offert':'Skarpt uppdrag']
+    ['Status', draft.isQuote?'Offert':'Skarpt uppdrag'],
+    ['Pris', (()=>{ const p=draftPrice(); return priceText(p.rate,p.mode,p.amount); })()]
   ];
   const section = (title, rows, editStep) => `
     <div class="card" style="margin-bottom:16px">
@@ -3661,6 +3694,8 @@ $app.addEventListener('input', e=>{
   }
   if(f==='title'){ draft.title=t.value; patchWizFooter(); return; }
   if(f==='description'){ draft.description=t.value; return; }
+  if(f==='draft-rate'){ draft.rate=t.value; return; }
+  if(f==='draft-travel-amount'){ draft.travelAmount=t.value; return; }
   if(f==='plannedDate'){ draft.plannedDate=t.value; return; }
   if(f==='plannedTime'){ draft.plannedTime=t.value; return; }
 
@@ -4057,6 +4092,7 @@ $app.addEventListener('click', async e=>{
   if(a==='set-priority'){ draft.priority=b.dataset.v; return render(); }
   if(a==='toggle-quote'){ draft.isQuote=!draft.isQuote; return render(); }
   if(a==='toggle-use-customer-address'){ draft.worksite.useCustomerAddress=!draft.worksite.useCustomerAddress; return render(); }
+  if(a==='set-draft-travel'){ draft.travelMode=b.dataset.mode; draft.travelAmount=''; return render(); }
   if(a==='add-draft-checklist-item'){
     const d = st.clDraft||{};
     if(!d.name || !String(d.name).trim()){ flash('Ange ett namn på momentet'); return; }
@@ -4089,7 +4125,8 @@ $app.addEventListener('click', async e=>{
       siteUsesCustomerAddress: draftUsesCustomerAddress(),
       siteAddress: draft.worksite.address.trim()||null,
       sitePostalCode: draft.worksite.postalCode.trim()||null,
-      siteCity: draft.worksite.city.trim()||null
+      siteCity: draft.worksite.city.trim()||null,
+      price: (()=>{ const p=draftPrice(); return {rate:p.rate,mode:p.mode,amount:p.amount}; })()
     });
     for(const it of draft.checklist) await addChecklistItem(job.id, it);
     flash('Uppdrag skapat');

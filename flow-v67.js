@@ -17,6 +17,7 @@
     .flow67-actions{display:flex;gap:8px;margin-top:11px}
     .flow67-actions button{min-height:40px;border-radius:14px;background:var(--surface2);padding:0 12px;font-size:12px;font-weight:700;flex:1}
     .flow67-main{background:var(--accent)!important;color:var(--ink)}
+    .flow67-price{width:100%;margin-top:10px;text-align:left;font-size:13px;font-weight:600;color:var(--muted);padding:6px 2px}
     .flow67-details{width:100%;text-align:center;margin:14px 0 4px;font-size:13px;font-weight:700;color:var(--muted)}
     .flow67-job:not(.flow67-more) .section-cards{display:none}
     .flow67-work-measure{position:relative}
@@ -40,6 +41,7 @@
               <button type="button" data-act="open-job-tab" data-tab="material">Material</button>
               <button type="button" data-act="open-job-tab" data-tab="arbete">Arbete & att göra</button>
             </div>
+            <button type="button" class="flow67-price" data-act="open-job-priser">Pris: ${esc(typeof priceText==='function'?priceText(Number(job.hourlyRate)||0,job.travelMode||'fixed',job.travelMode==='km'?(Number(job.travelPerKm)||0):(Number(job.travelFixedFee)||0)):'')} <span aria-hidden="true">›</span></button>
           </div>
 
           <div class="flow67-card">
