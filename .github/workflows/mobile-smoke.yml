@@ -82,6 +82,8 @@ jobs:
           if (!html.includes('src="./stats-v94.js"')) throw new Error('stats-v94.js laddas inte av index.html');
           if (!desktop.includes('left:116px!important') || !desktop.includes('max-width:1280px')) throw new Error('Desktop-panelerna använder inte full arbetsyta');
           if (!html.includes('function currentIcalEvents') || !html.includes("range:'today+180d'")) throw new Error('Kalendern filtrerar inte bort gamla Outlook-händelser');
+          if (!html.includes('ICS_TZ_ALIASES') || !html.includes('wallTimeInZoneToDate') || !html.includes("params.TZID||''")) throw new Error('Kalendern saknar robust TZID-tolkning');
+          if (!desktop.includes('calendar-panel-v95') || !desktop.includes('inset:0 0 0 116px!important')) throw new Error('Kalenderns desktop-arbetsyta saknas');
 
           // v78: tilläggslagren ska laddas direkt av index.html, inte bara via service workern.
           const layers = [...sw.matchAll(/'\.\/([a-z0-9-]+-v\d+\.js)'/g)].map(m => m[1]);
@@ -284,6 +286,13 @@ jobs:
             const parsedIcs = await page.evaluate(() => parseICS('BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Test\nDTSTART:20260929T140000\nDTEND:20260929T150000\nEND:VEVENT\nEND:VCALENDAR'));
             if (!parsedIcs[0]?.end) throw new Error('ICS DTEND saknas efter parsing');
 
+            const parsedTz = await page.evaluate(() => {
+              const events=parseICS('BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:TZ test\nDTSTART;TZID=W. Europe Standard Time:20260929T064500\nDTEND;TZID=W. Europe Standard Time:20260929T151500\nEND:VEVENT\nEND:VCALENDAR');
+              const f=v=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Stockholm',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(v));
+              return {start:f(events[0].start),end:f(events[0].end)};
+            });
+            if (parsedTz.start!=='06:45' || parsedTz.end!=='15:15') throw new Error('Outlook TZID tolkades fel: '+JSON.stringify(parsedTz));
+
 
             // v92: Hem i bottenmenyn ska stänga Inställningar direkt.
             await page.evaluate(() => {
@@ -332,6 +341,17 @@ jobs:
             });
             if (statsDesktop.kpis!==6 || !statsDesktop.grids || statsDesktop.panelLeft<100 || statsDesktop.panelWidth<1000) {
               throw new Error('Desktop-statistik använder inte full arbetsyta: '+JSON.stringify(statsDesktop));
+            }
+
+            await page.locator('.bottomnav [data-act="nav-home"]').click();
+            await page.evaluate(() => { calendarOpen=true; render(); });
+            await page.getByText('Kalender', { exact:true }).first().waitFor({state:'visible',timeout:5000});
+            const calDesktop=await page.evaluate(()=>{
+              const p=document.querySelector('.calendar-panel-v95')?.getBoundingClientRect();
+              return {left:p?.left||0,width:p?.width||0,viewport:innerWidth};
+            });
+            if (calDesktop.left<100 || calDesktop.width<1200 || Math.abs((calDesktop.left+calDesktop.width)-calDesktop.viewport)>3) {
+              throw new Error('Kalendern täcker inte desktop-arbetsytan: '+JSON.stringify(calDesktop));
             }
 
             // Huvudmenyn ska fungera direkt från en djup panel utan webbläsar-Tillbaka.
