@@ -75,8 +75,9 @@
     if(!b) return;
     const act=b.dataset.act;
 
-    if(act==='nav-home'){
-      // Hem ska alltid vara en genväg hela vägen hem, även från öppna paneler.
+    const mainActs=new Set(['nav-home','nav-projects','open-radar','open-settings']);
+    if(mainActs.has(act)){
+      // Huvudmenyn ska alltid byta sektion direkt – aldrig kräva ett extra Tillbaka/X.
       e.preventDefault();
       e.stopImmediatePropagation();
       if(typeof settingsOpen!=='undefined') settingsOpen=false;
@@ -85,15 +86,25 @@
         if(typeof scannerFrame!=='undefined'&&scannerFrame){ cancelAnimationFrame(scannerFrame); scannerFrame=null; }
         if(typeof scannerStream!=='undefined'&&scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream=null; }
       }catch{}
-      st={view:'home'};
+      if(st){
+        st.settingsTab=undefined;
+        st.matPanel=false;
+        st.matPanelMode='browse';
+        st.openPhoto=null;
+        st.scannerOpen=false;
+        st.workNoteOpen=false;
+        st.workCaptureOpen=false;
+        st.workAiOpen=false;
+      }
+      if(act==='nav-home') st={view:'home'};
+      if(act==='nav-projects') st={view:'projects'};
+      if(act==='open-radar') st={view:'radar'};
+      if(act==='open-settings'){
+        st={view:'home'};
+        settingsOpen=true;
+      }
       render();
       return;
-    }
-
-    if(['nav-projects','open-radar'].includes(act)){
-      if(typeof settingsOpen!=='undefined') settingsOpen=false;
-      if(typeof calendarOpen!=='undefined') calendarOpen=false;
-      if(st) st.settingsTab=undefined;
     }
   },true);
 
