@@ -72,6 +72,7 @@ jobs:
 
           if (!home.includes('todayExternalV89') || !home.includes('Outlook') || !home.includes('maybeSyncCalendarV89')) throw new Error('Startsidan saknar Outlook-agenda');
           if (!html.includes("prop==='DTEND'") || !html.includes("end: e.dtend?.date")) throw new Error('ICS-sluttid parsas inte');
+          if (!html.includes('LIRO_ICAL_PROXY_URL') || !html.includes("method:'POST'") || !html.includes('outlook-calendar-proxy')) throw new Error('Kalendersynk använder inte LiRo-proxyn');
 
           // v78: tilläggslagren ska laddas direkt av index.html, inte bara via service workern.
           const layers = [...sw.matchAll(/'\.\/([a-z0-9-]+-v\d+\.js)'/g)].map(m => m[1]);
