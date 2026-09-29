@@ -1067,11 +1067,13 @@ function parseICS(text){
     const value = line.slice(idx+1);
     if(prop==='SUMMARY') cur.summary = unescapeICSText(value);
     else if(prop==='DTSTART') cur.dtstart = parseICSDate(value);
+    else if(prop==='DTEND') cur.dtend = parseICSDate(value);
     else if(prop==='LOCATION') cur.location = unescapeICSText(value);
   }
   return events.filter(e=>e.dtstart).map(e=>({
     title: e.summary || 'Namnlös händelse',
     start: e.dtstart.date.toISOString(),
+    end: e.dtend?.date ? e.dtend.date.toISOString() : null,
     allDay: e.dtstart.allDay,
     location: e.location || ''
   }));
@@ -3352,12 +3354,17 @@ function vCalendarPanel(){
       </button>`;
     }
     const e = entry.event;
+    const timeText = e.allDay ? 'Heldag' : (() => {
+      const s=new Date(e.start), end=e.end?new Date(e.end):null;
+      const f=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      return end && !Number.isNaN(end.getTime()) ? f(s)+' – '+f(end) : f(s);
+    })();
     return `
     <div class="row gap-sm" style="width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line)">
       <div class="icon-circle" style="width:36px;height:36px;flex:0 0 36px">${ICON.calendar}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:15px">${esc(e.title)}</div>
-        <div class="muted" style="font-size:12px;margin-top:2px">${e.allDay?'Heldag':esc(fmtTimeRange(e.start))}${e.location?' · '+esc(e.location):''}</div>
+        <div class="muted" style="font-size:12px;margin-top:2px">${esc(timeText)}${e.location?' · '+esc(e.location):''}</div>
       </div>
       <span class="pill" style="flex:0 0 auto;font-size:11px">Outlook</span>
     </div>`;
