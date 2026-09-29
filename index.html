@@ -1051,13 +1051,46 @@ function loadCachedIcalEvents(){
     localStorage.setItem('lirogo_ical_events',JSON.stringify(externalEvents));
   }catch{ externalEvents=[]; }
 }
-function parseICSDate(val){
+const ICS_TZ_ALIASES={
+  'W. Europe Standard Time':'Europe/Stockholm',
+  'Romance Standard Time':'Europe/Paris',
+  'Central Europe Standard Time':'Europe/Budapest',
+  'Central European Standard Time':'Europe/Warsaw',
+  'GMT Standard Time':'Europe/London',
+  'UTC':'UTC'
+};
+function normalizeICSTimeZone(tzid){
+  const raw=String(tzid||'').replace(/^"|"$/g,'').trim();
+  if(!raw) return '';
+  return ICS_TZ_ALIASES[raw]||raw;
+}
+function wallTimeInZoneToDate(y,mo,d,h,mi,s,tzid){
+  const tz=normalizeICSTimeZone(tzid);
+  if(!tz) return new Date(y,mo-1,d,h,mi,s);
+  try{
+    let guess=Date.UTC(y,mo-1,d,h,mi,s);
+    const desired=Date.UTC(y,mo-1,d,h,mi,s);
+    const fmt=new Intl.DateTimeFormat('en-CA',{
+      timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',
+      hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+    });
+    for(let i=0;i<2;i++){
+      const parts=Object.fromEntries(fmt.formatToParts(new Date(guess)).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+      const shown=Date.UTC(Number(parts.year),Number(parts.month)-1,Number(parts.day),Number(parts.hour),Number(parts.minute),Number(parts.second));
+      guess+=desired-shown;
+    }
+    return new Date(guess);
+  }catch{
+    return new Date(y,mo-1,d,h,mi,s);
+  }
+}
+function parseICSDate(val,tzid=''){
   const m = val.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
   if(!m) return null;
   const [,y,mo,d,h,mi,s,z] = m;
   if(h===undefined) return { date: new Date(Number(y), Number(mo)-1, Number(d)), allDay:true };
   if(z) return { date: new Date(Date.UTC(Number(y),Number(mo)-1,Number(d),Number(h),Number(mi),Number(s))), allDay:false };
-  return { date: new Date(Number(y),Number(mo)-1,Number(d),Number(h),Number(mi),Number(s)), allDay:false };
+  return { date: wallTimeInZoneToDate(Number(y),Number(mo),Number(d),Number(h),Number(mi),Number(s),tzid), allDay:false };
 }
 function unescapeICSText(v){ return v.replace(/\\n/gi,' ').replace(/\\,/g,',').replace(/\\;/g,';').replace(/\\\\/g,'\\'); }
 function parseICS(text){
@@ -1074,11 +1107,17 @@ function parseICS(text){
     if(line==='END:VEVENT'){ if(cur) events.push(cur); cur=null; continue; }
     if(!cur) continue;
     const idx = line.indexOf(':'); if(idx<0) continue;
-    const prop = line.slice(0,idx).split(';')[0].toUpperCase();
+    const headParts=line.slice(0,idx).split(';');
+    const prop = headParts[0].toUpperCase();
+    const params={};
+    for(const part of headParts.slice(1)){
+      const eq=part.indexOf('=');
+      if(eq>0) params[part.slice(0,eq).toUpperCase()]=part.slice(eq+1);
+    }
     const value = line.slice(idx+1);
     if(prop==='SUMMARY') cur.summary = unescapeICSText(value);
-    else if(prop==='DTSTART') cur.dtstart = parseICSDate(value);
-    else if(prop==='DTEND') cur.dtend = parseICSDate(value);
+    else if(prop==='DTSTART') cur.dtstart = parseICSDate(value,params.TZID||'');
+    else if(prop==='DTEND') cur.dtend = parseICSDate(value,params.TZID||'');
     else if(prop==='LOCATION') cur.location = unescapeICSText(value);
   }
   return events.filter(e=>e.dtstart).map(e=>({
@@ -3397,7 +3436,7 @@ function vCalendarPanel(){
   `).join('') : `<p class="empty" style="padding-left:0;margin-top:16px">Inga uppdrag ännu.</p>`;
 
   return `
-  <div class="mat-panel">
+  <div class="mat-panel calendar-panel-v95">
     <div class="mat-panel-head">
       <div class="mat-panel-title">
         <h1>Kalender</h1>
