@@ -30,6 +30,9 @@
     .bar-value-v44{font-size:9px;color:var(--muted);white-space:nowrap}.quick-grid-v44{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
     .quick-v44{background:var(--surface);border-radius:18px;padding:14px;min-height:74px;text-align:left}.quick-v44 svg{color:var(--accent);margin-bottom:7px}.quick-v44 b{display:block;font-size:14px}.quick-v44 span{font-size:11px;color:var(--muted)}
     .stats-empty-v44{font-size:12px;color:var(--muted);padding:8px 0 2px}
+    .home-cal-source-v89{font-size:10px;font-weight:700;padding:3px 7px;border-radius:999px;background:var(--surface2);color:var(--muted);flex:0 0 auto}
+    .home-cal-note-v89{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.4}
+
     .stats-full-v44{padding:16px 16px 100px}.stats-full-v44 .stats-card-v44{margin-bottom:14px}
   `;
   document.head.appendChild(style);
@@ -37,12 +40,44 @@
   let allMaterialsV44=null;
   let statsLoadingV44=false;
   let statsDirtyV44=true;
+  let calendarAutoTryV89=0;
+  let calendarAutoSyncingV89=false;
 
   function isSameDayV44(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
   function todayJobsV44(){
     const now=new Date();
     return jobs.filter(j=>j.plannedAt&&isSameDayV44(new Date(j.plannedAt),now)&&!['done','invoice_ready','invoiced'].includes(j.status))
       .sort((a,b)=>new Date(a.plannedAt)-new Date(b.plannedAt));
+  }
+  function todayExternalV89(){
+    const now=new Date();
+    const list=Array.isArray(externalEvents)?externalEvents:[];
+    return list.filter(e=>e?.start&&isSameDayV44(new Date(e.start),now))
+      .sort((a,b)=>new Date(a.start)-new Date(b.start));
+  }
+  function externalTimeV89(e){
+    if(e?.allDay) return 'Heldag';
+    const s=new Date(e.start), end=e?.end?new Date(e.end):null;
+    const f=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    if(Number.isNaN(s.getTime())) return '';
+    return end&&!Number.isNaN(end.getTime()) ? f(s)+' – '+f(end) : f(s);
+  }
+  function maybeSyncCalendarV89(){
+    if(calendarAutoSyncingV89||typeof getIcalUrl!=='function'||typeof syncIcalCalendar!=='function') return;
+    if(!getIcalUrl()) return;
+    const now=Date.now();
+    const meta=typeof getIcalMeta==='function'?getIcalMeta():{};
+    const last=meta?.lastSynced?new Date(meta.lastSynced).getTime():0;
+    if(last&&now-last<15*60*1000) return;
+    if(calendarAutoTryV89&&now-calendarAutoTryV89<15*60*1000) return;
+    calendarAutoTryV89=now;
+    calendarAutoSyncingV89=true;
+    Promise.resolve(syncIcalCalendar()).then(()=>{
+      calendarAutoSyncingV89=false;
+      if(st.view==='home') render();
+    }).catch(()=>{
+      calendarAutoSyncingV89=false;
+    });
   }
   function activeJobsV44(){ return jobs.filter(j=>!['done','invoice_ready','invoiced'].includes(j.status)); }
   function missingRotJobsV51(){
@@ -103,9 +138,22 @@
     </div>`;
   }
   function vTodayV44(){
-    const list=todayJobsV44();
-    if(!list.length) return '<div class="stats-empty-v44">Inga jobb planerade idag.</div>';
-    return `<div class="home-v44-list">${list.map(j=>{const c=customerOf(j);return `<button class="home-v44-row" data-act="open-job" data-id="${j.id}"><span style="color:var(--accent)">${ICON.clock}</span><span class="home-v44-row-main"><span class="home-v44-row-title">${esc(j.title)}</span><span class="home-v44-row-sub">${esc(fmtTimeRange(j.plannedAt))}${c?' · '+esc(c.name):''}</span></span>${ICON.chevronRight}</button>`}).join('')}</div>`;
+    const jobRows=todayJobsV44().map(j=>({type:'job',time:new Date(j.plannedAt).getTime(),job:j}));
+    const outlookRows=todayExternalV89().map(event=>({type:'outlook',time:new Date(event.start).getTime(),event}));
+    const list=[...jobRows,...outlookRows].sort((a,b)=>a.time-b.time);
+    const connected=typeof getIcalUrl==='function'&&!!getIcalUrl();
+    if(!list.length){
+      return '<div class="stats-empty-v44">'+(connected?'Inga jobb eller Outlook-bokningar idag.':'Inga jobb planerade idag.<div class="home-cal-note-v89">Outlook är inte ansluten ännu · öppna Mer → Kalender.</div>')+'</div>';
+    }
+    const rows=list.map(item=>{
+      if(item.type==='job'){
+        const j=item.job,cust=customerOf(j);
+        return `<button class="home-v44-row" data-act="open-job" data-id="${j.id}"><span style="color:var(--accent)">${ICON.clock}</span><span class="home-v44-row-main"><span class="home-v44-row-title">${esc(j.title)}</span><span class="home-v44-row-sub">${esc(fmtTimeRange(j.plannedAt))}${cust?' · '+esc(cust.name):''}</span></span><span class="home-cal-source-v89">LiRo</span>${ICON.chevronRight}</button>`;
+      }
+      const e=item.event;
+      return `<button class="home-v44-row" data-act="open-calendar"><span style="color:var(--accent)">${ICON.calendar}</span><span class="home-v44-row-main"><span class="home-v44-row-title">${esc(e.title||'Kalenderhändelse')}</span><span class="home-v44-row-sub">${esc(externalTimeV89(e))}${e.location?' · '+esc(e.location):''}</span></span><span class="home-cal-source-v89">Outlook</span>${ICON.chevronRight}</button>`;
+    }).join('');
+    return `<div class="home-v44-list">${rows}</div>${connected?'':'<div class="home-cal-note-v89">Outlook är inte ansluten ännu · öppna Mer → Kalender.</div>'}`;
   }
   function vActionsV44(){
     const radarRows=activeRadarItems().slice(0,3);
@@ -305,6 +353,7 @@
   afterHome=function(){
     try{ oldAfterHome(); }catch{}
     loadStatsV44(statsDirtyV44);
+    maybeSyncCalendarV89();
   };
 
   document.addEventListener('click',function(e){
