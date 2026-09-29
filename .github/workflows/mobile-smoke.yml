@@ -301,14 +301,18 @@ jobs:
             // v92: bred desktop ska få tvåkolumns dashboard.
             await page.setViewportSize({width:1440,height:1000});
             await page.evaluate(() => { st={view:'home'}; settingsOpen=false; calendarOpen=false; render(); });
-            const desktopState = await page.evaluate(() => ({
-              desktopHome:document.body.classList.contains('liro-desktop-home'),
-              grid:!!document.querySelector('.desktop-grid-v92'),
-              columns:getComputedStyle(document.querySelector('.desktop-grid-v92')).gridTemplateColumns,
-              navLeft:getComputedStyle(document.querySelector('.bottomnav')).left,
-              navRight:getComputedStyle(document.querySelector('.bottomnav')).right
-            }));
-            if (!desktopState.desktopHome || !desktopState.grid || !desktopState.columns.includes(' ') || desktopState.navLeft==='auto' || desktopState.navRight!=='auto') {
+            const desktopState = await page.evaluate(() => {
+              const nav=document.querySelector('.bottomnav');
+              const rect=nav?.getBoundingClientRect();
+              return {
+                desktopHome:document.body.classList.contains('liro-desktop-home'),
+                grid:!!document.querySelector('.desktop-grid-v92'),
+                columns:getComputedStyle(document.querySelector('.desktop-grid-v92')).gridTemplateColumns,
+                navLeft:rect?.left||0,
+                navWidth:rect?.width||0
+              };
+            });
+            if (!desktopState.desktopHome || !desktopState.grid || !desktopState.columns.includes(' ') || desktopState.navLeft<10 || desktopState.navLeft>30 || desktopState.navWidth<70 || desktopState.navWidth>90) {
               throw new Error('Desktop-dashboard/sidomeny aktiverades inte korrekt: '+JSON.stringify(desktopState));
             }
 
