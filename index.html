@@ -1037,8 +1037,19 @@ function getIcalUrl(){ return localStorage.getItem('lirogo_ical_url') || ''; }
 function setIcalUrl(u){ if(u) localStorage.setItem('lirogo_ical_url', u); else localStorage.removeItem('lirogo_ical_url'); }
 function getIcalMeta(){ try{ return JSON.parse(localStorage.getItem('lirogo_ical_meta')||'{}'); }catch{ return {}; } }
 function setIcalMeta(meta){ localStorage.setItem('lirogo_ical_meta', JSON.stringify(meta)); }
+function currentIcalEvents(events){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const horizon=new Date(today); horizon.setDate(horizon.getDate()+180);
+  return (Array.isArray(events)?events:[]).filter(e=>{
+    const start=new Date(e?.start||0);
+    return !Number.isNaN(start.getTime()) && start>=today && start<horizon;
+  }).sort((a,b)=>new Date(a.start)-new Date(b.start));
+}
 function loadCachedIcalEvents(){
-  try{ externalEvents = JSON.parse(localStorage.getItem('lirogo_ical_events')||'[]'); }catch{ externalEvents=[]; }
+  try{
+    externalEvents=currentIcalEvents(JSON.parse(localStorage.getItem('lirogo_ical_events')||'[]'));
+    localStorage.setItem('lirogo_ical_events',JSON.stringify(externalEvents));
+  }catch{ externalEvents=[]; }
 }
 function parseICSDate(val){
   const m = val.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
@@ -1094,10 +1105,10 @@ async function syncIcalCalendar(){
   }
   const text = await res.text();
   if(!text.includes('BEGIN:VCALENDAR')) throw new Error('proxy-not-calendar');
-  const events = parseICS(text);
+  const events = currentIcalEvents(parseICS(text));
   externalEvents = events;
   localStorage.setItem('lirogo_ical_events', JSON.stringify(events));
-  setIcalMeta({ lastSynced: new Date().toISOString(), count: events.length, via:'liro-proxy' });
+  setIcalMeta({ lastSynced: new Date().toISOString(), count: events.length, via:'liro-proxy', range:'today+180d' });
 }
 
 function getReportEmail(){ return localStorage.getItem('lirogo_report_email') || ''; }
@@ -3339,7 +3350,7 @@ function vMaterialPanel(job){
 /* ================= Kalender (agenda-lista över alla uppdrag) ================= */
 function vCalendarPanel(){
   const jobEntries = jobs.filter(j=>j.plannedAt).map(j=>({ type:'job', date:new Date(j.plannedAt), job:j }));
-  const extEntries = externalEvents.map(e=>({ type:'ext', date:new Date(e.start), event:e }));
+  const extEntries = currentIcalEvents(externalEvents).map(e=>({ type:'ext', date:new Date(e.start), event:e }));
   const withoutDate = jobs.filter(j=>!j.plannedAt);
 
   const groups = [];
@@ -3583,7 +3594,7 @@ function vSettingsCalendar(){
       <div style="margin-top:16px">
         <button class="primary-btn" data-act="sync-ical">${st.icalSyncing?'Synkar…':'Synka nu'}</button>
       </div>
-      ${meta.lastSynced ? `<p class="settings-note" style="margin-top:12px">Senast synkad: ${esc(fmtDateTime(meta.lastSynced))} · ${meta.count||0} händelser</p>` : ''}
+      ${meta.lastSynced ? `<p class="settings-note" style="margin-top:12px">Senast synkad: ${esc(fmtDateTime(meta.lastSynced))} · ${meta.count||0} aktuella händelser</p>` : ''}
       ${st.icalError ? `<p class="settings-note" style="margin-top:8px;color:var(--pri-urgent)">${esc(st.icalError)}</p>` : ''}
     </div>
   </div>`;
