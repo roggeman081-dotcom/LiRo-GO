@@ -178,6 +178,31 @@
         right:0!important;
         max-width:none!important;
       }
+
+      .calendar-panel-v95{
+        position:fixed!important;
+        inset:0 0 0 116px!important;
+        width:auto!important;
+        max-width:none!important;
+        margin:0!important;
+        padding:24px 32px 56px!important;
+        background:var(--bg)!important;
+        z-index:100!important;
+        box-sizing:border-box!important;
+      }
+
+      .calendar-panel-v95 .mat-panel-list{
+        max-width:1280px!important;
+        width:100%!important;
+        margin:0 auto!important;
+        padding:0 0 48px!important;
+      }
+
+      .calendar-panel-v95 .mat-panel-head{
+        max-width:1280px!important;
+        width:100%!important;
+        margin:0 auto!important;
+      }
     }
   `;
   document.head.appendChild(style);
