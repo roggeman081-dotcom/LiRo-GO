@@ -70,7 +70,6 @@ jobs:
           const customerReport = fs.readFileSync('customer-report-v58.js','utf8');
           if (!customerReport.includes('measurementsV66') || !customerReport.includes('MÄTVÄRDEN')) throw new Error('Kundrapporten saknar mätvärden');
 
-          const home = fs.readFileSync('home-v44.js','utf8');
           if (!home.includes('todayExternalV89') || !home.includes('Outlook') || !home.includes('maybeSyncCalendarV89')) throw new Error('Startsidan saknar Outlook-agenda');
           if (!html.includes("prop==='DTEND'") || !html.includes("end: e.dtend?.date")) throw new Error('ICS-sluttid parsas inte');
 
