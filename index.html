@@ -1078,16 +1078,26 @@ function parseICS(text){
     location: e.location || ''
   }));
 }
+const LIRO_ICAL_PROXY_URL = 'https://hpekajbndztytppominl.supabase.co/functions/v1/outlook-calendar-proxy';
 async function syncIcalCalendar(){
   const url = getIcalUrl();
   if(!url) throw new Error('no-url');
-  const res = await fetch(url);
-  if(!res.ok) throw new Error('http-'+res.status);
+  const res = await fetch(LIRO_ICAL_PROXY_URL,{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({url})
+  });
+  if(!res.ok){
+    let detail='';
+    try{ detail=(await res.json())?.error||''; }catch{}
+    throw new Error(detail ? 'proxy-'+detail : 'proxy-http-'+res.status);
+  }
   const text = await res.text();
+  if(!text.includes('BEGIN:VCALENDAR')) throw new Error('proxy-not-calendar');
   const events = parseICS(text);
   externalEvents = events;
   localStorage.setItem('lirogo_ical_events', JSON.stringify(events));
-  setIcalMeta({ lastSynced: new Date().toISOString(), count: events.length });
+  setIcalMeta({ lastSynced: new Date().toISOString(), count: events.length, via:'liro-proxy' });
 }
 
 function getReportEmail(){ return localStorage.getItem('lirogo_report_email') || ''; }
@@ -3562,7 +3572,7 @@ function vSettingsCalendar(){
       </div>
     </div>
     <div class="settings-body">
-      <p class="settings-note">Klistra in din Outlook-kalenderlänk (iCal) så visas dina Outlook-händelser tillsammans med dina uppdrag i Kalender-vyn. Skrivskyddat — appen kan bara läsa, aldrig ändra din kalender.</p>
+      <p class="settings-note">Klistra in din Outlook-kalenderlänk (iCal) så visas dina Outlook-händelser tillsammans med dina uppdrag på startsidan och i Kalender-vyn. Skrivskyddat — appen kan bara läsa, aldrig ändra din kalender.</p>
       <p class="settings-note" style="margin-top:8px">
         I Outlook på webben: Inställningar → Kalender → Delade kalendrar → Publicera en kalender → välj "Kan visa alla detaljer" → Publicera. Klistra in ICS-länken du får här.
       </p>
@@ -4254,7 +4264,9 @@ $app.addEventListener('click', async e=>{
       await syncIcalCalendar();
     }catch(err){
       st.icalError = err.message==='no-url' ? 'Klistra in en kalenderlänk först'
-        : 'Kunde inte hämta kalendern. Kontrollera länken — om den stämmer kan Outlook blockera direkt webbläsaråtkomst (CORS), och då behövs en liten mellanserver för att lösa det.';
+        : err.message?.includes('calendar-host-not-allowed') ? 'Kalenderlänken verkar inte vara en Outlook-ICS-länk.'
+        : err.message?.includes('upstream-http') ? 'Outlook svarade inte på kalenderlänken. Publicera kalendern på nytt och prova den nya ICS-länken.'
+        : 'Kunde inte synka kalendern via LiRo-proxyn. Kontrollera nätet och ICS-länken och försök igen.';
     }
     st.icalSyncing=false;
     return render();
