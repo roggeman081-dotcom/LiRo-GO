@@ -76,7 +76,11 @@ jobs:
           const desktop = fs.readFileSync('desktop-v92.js','utf8');
           if (!desktop.includes('liro-desktop-home') || !desktop.includes('@media (min-width:900px)')) throw new Error('Desktop-layouten saknas');
           const nav = fs.readFileSync('nav-v56.js','utf8');
-          if (!nav.includes("if(act==='nav-home')") || !nav.includes("st={view:'home'}")) throw new Error('Hem-knappen stänger inte paneler direkt');
+          if (!nav.includes("mainActs=new Set(['nav-home','nav-projects','open-radar','open-settings'])") || !nav.includes("st={view:'home'}")) throw new Error('Huvudmenyn byter inte sektion direkt');
+          const stats94 = fs.readFileSync('stats-v94.js','utf8');
+          if (!stats94.includes('Statistik & rapporter') || !stats94.includes('stats94-kpis') || !stats94.includes('Exportera CSV')) throw new Error('Fördjupad statistik v94 saknas');
+          if (!html.includes('src="./stats-v94.js"')) throw new Error('stats-v94.js laddas inte av index.html');
+          if (!desktop.includes('left:116px!important') || !desktop.includes('max-width:1280px')) throw new Error('Desktop-panelerna använder inte full arbetsyta');
           if (!html.includes('function currentIcalEvents') || !html.includes("range:'today+180d'")) throw new Error('Kalendern filtrerar inte bort gamla Outlook-händelser');
 
           // v78: tilläggslagren ska laddas direkt av index.html, inte bara via service workern.
@@ -136,6 +140,13 @@ jobs:
             }
             if (!body.includes('Materialvinst')) throw new Error('Smarta startsidan laddades inte');
             if (await pwa.locator('[data-act="open-stats-v44"]').count() < 1) throw new Error('Statistikknappen hittades inte');
+
+            // Mobil/PWA: statistik ska öppnas utan layout-/navigationsfel.
+            await pwa.locator('[data-act="open-stats-v44"]').first().click();
+            await pwa.getByText('Statistik & rapporter', { exact:true }).waitFor({ state:'visible', timeout:5000 });
+            if (await pwa.locator('.stats94-kpi').count() !== 6) throw new Error('Mobil statistik saknar sex KPI:er');
+            await pwa.locator('.bottomnav [data-act="nav-home"]').click();
+            await pwa.waitForFunction(() => st.view==='home' && !settingsOpen, null, {timeout:5000});
 
             const swState = await pwa.evaluate(async () => {
               const reg = await navigator.serviceWorker.getRegistration();
@@ -300,6 +311,37 @@ jobs:
             if (!desktopState.desktopHome || !desktopState.grid || !desktopState.columns.includes(' ') || desktopState.navLeft==='auto' || desktopState.navRight!=='auto') {
               throw new Error('Desktop-dashboard/sidomeny aktiverades inte korrekt: '+JSON.stringify(desktopState));
             }
+
+            // Desktop: öppna statistik som full arbetsyta och verifiera rapportdashboard.
+            await page.locator('[data-act="open-stats-v44"]').first().click();
+            await page.getByText('Statistik & rapporter', { exact:true }).waitFor({ state:'visible', timeout:5000 });
+            const statsDesktop = await page.evaluate(() => {
+              const panel=document.querySelector('.mat-panel');
+              const rect=panel?.getBoundingClientRect();
+              return {
+                kpis:document.querySelectorAll('.stats94-kpi').length,
+                grids:document.querySelectorAll('.stats94-grid').length,
+                panelLeft:rect?.left||0,
+                panelWidth:rect?.width||0,
+                viewport:innerWidth
+              };
+            });
+            if (statsDesktop.kpis!==6 || !statsDesktop.grids || statsDesktop.panelLeft<100 || statsDesktop.panelWidth<1000) {
+              throw new Error('Desktop-statistik använder inte full arbetsyta: '+JSON.stringify(statsDesktop));
+            }
+
+            // Huvudmenyn ska fungera direkt från en djup panel utan webbläsar-Tillbaka.
+            await page.locator('.bottomnav [data-act="nav-projects"]').click();
+            const projectNavState = await page.evaluate(() => ({view:st.view,settingsOpen,calendarOpen,matPanel:!!st.matPanel}));
+            if (projectNavState.view!=='projects' || projectNavState.settingsOpen || projectNavState.calendarOpen || projectNavState.matPanel) {
+              throw new Error('Uppdrag-knappen lämnade ett gammalt lager öppet: '+JSON.stringify(projectNavState));
+            }
+            await page.locator('.bottomnav [data-act="open-settings"]').click();
+            const settingsState = await page.evaluate(() => ({view:st.view,settingsOpen}));
+            if (settingsState.view!=='home' || !settingsState.settingsOpen) throw new Error('Mer öppnades inte rent: '+JSON.stringify(settingsState));
+            await page.locator('.bottomnav [data-act="open-radar"]').click();
+            const radarState = await page.evaluate(() => ({view:st.view,settingsOpen}));
+            if (radarState.view!=='radar' || radarState.settingsOpen) throw new Error('Radar stängde inte Inställningar direkt: '+JSON.stringify(radarState));
 
             const criticalErrors = errors.filter(e => !e.includes('favicon') && !e.includes('Service Worker'));
             if (criticalErrors.length) throw new Error('Kärnapp JavaScript-fel: ' + criticalErrors.join(' | '));
