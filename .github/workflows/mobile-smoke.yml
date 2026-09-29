@@ -292,11 +292,13 @@ jobs:
             await page.evaluate(() => { st={view:'home'}; settingsOpen=false; calendarOpen=false; render(); });
             const desktopState = await page.evaluate(() => ({
               desktopHome:document.body.classList.contains('liro-desktop-home'),
-              display:getComputedStyle(document.getElementById('app')).display,
-              columns:getComputedStyle(document.getElementById('app')).gridTemplateColumns
+              grid:!!document.querySelector('.desktop-grid-v92'),
+              columns:getComputedStyle(document.querySelector('.desktop-grid-v92')).gridTemplateColumns,
+              navLeft:getComputedStyle(document.querySelector('.bottomnav')).left,
+              navRight:getComputedStyle(document.querySelector('.bottomnav')).right
             }));
-            if (!desktopState.desktopHome || desktopState.display!=='grid' || !desktopState.columns.includes(' ')) {
-              throw new Error('Desktop-dashboard aktiverades inte: '+JSON.stringify(desktopState));
+            if (!desktopState.desktopHome || !desktopState.grid || !desktopState.columns.includes(' ') || desktopState.navLeft==='auto' || desktopState.navRight!=='auto') {
+              throw new Error('Desktop-dashboard/sidomeny aktiverades inte korrekt: '+JSON.stringify(desktopState));
             }
 
             const criticalErrors = errors.filter(e => !e.includes('favicon') && !e.includes('Service Worker'));
