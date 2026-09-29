@@ -11,30 +11,40 @@
       #app{max-width:1280px;margin:0 auto;min-height:100vh;padding:28px 32px 72px}
 
       body.liro-desktop-home #app{
-        display:grid;
-        grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-        gap:20px;
-        align-items:start;
+        display:block;
       }
 
       body.liro-desktop-home #app>.home-header,
       body.liro-desktop-home #app>.greeting{
-        grid-column:1 / -1;
         padding-left:0;
         padding-right:0;
       }
 
       body.liro-desktop-home #app>.greeting{padding-top:10px}
 
-      body.liro-desktop-home #app>.be-v57,
-      body.liro-desktop-home #app>.backup-v64,
-      body.liro-desktop-home #app>.liro-guide,
-      body.liro-desktop-home #app>.liro-ask-v50,
-      body.liro-desktop-home #app>.home-v44-section{
+      body.liro-desktop-home .desktop-grid-v92{
+        display:grid;
+        grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+        gap:20px;
+        align-items:start;
+      }
+
+      body.liro-desktop-home .desktop-col-v92{
+        display:flex;
+        flex-direction:column;
+        gap:20px;
+        min-width:0;
+      }
+
+      body.liro-desktop-home .desktop-col-v92>.be-v57,
+      body.liro-desktop-home .desktop-col-v92>.backup-v64,
+      body.liro-desktop-home .desktop-col-v92>.liro-guide,
+      body.liro-desktop-home .desktop-col-v92>.liro-ask-v50,
+      body.liro-desktop-home .desktop-col-v92>.home-v44-section{
         margin:0;
       }
 
-      body.liro-desktop-home #app>.home-v44-section{
+      body.liro-desktop-home .desktop-col-v92>.home-v44-section{
         padding:0;
       }
 
@@ -53,10 +63,13 @@
       body.liro-v56-nav .bottomnav{
         position:fixed!important;
         left:18px!important;
+        right:auto!important;
         top:50%!important;
         bottom:auto!important;
         transform:translateY(-50%)!important;
         width:80px!important;
+        max-width:none!important;
+        margin:0!important;
         min-height:330px;
         height:auto!important;
         border-radius:26px!important;
@@ -83,6 +96,9 @@
         bottom:28px!important;
         top:auto!important;
         transform:none!important;
+        max-width:none!important;
+        margin:0!important;
+        width:auto!important;
         z-index:91!important;
       }
 
@@ -125,7 +141,51 @@
   document.head.appendChild(style);
 
   function syncDesktopClass(){
-    document.body.classList.toggle('liro-desktop-home',st?.view==='home'&&!settingsOpen&&!calendarOpen);
+    const desktopHome=st?.view==='home'&&!settingsOpen&&!calendarOpen;
+    document.body.classList.toggle('liro-desktop-home',desktopHome);
+    if(!desktopHome || window.innerWidth<900) return;
+
+    if($app.querySelector('.desktop-grid-v92')) return;
+
+    const children=[...$app.children];
+    const header=children.find(el=>el.classList.contains('home-header'));
+    const greeting=children.find(el=>el.classList.contains('greeting'));
+    const nav=children.find(el=>el.classList.contains('bottomnav'));
+    const fab=children.find(el=>el.classList.contains('fab-wrap'));
+
+    const breakEven=children.find(el=>el.classList.contains('be-v57'));
+    const backup=children.find(el=>el.classList.contains('backup-v64'));
+    const guide=children.find(el=>el.classList.contains('liro-guide'));
+    const ask=children.find(el=>el.classList.contains('liro-ask-v50'));
+    const sections=children.filter(el=>el.classList.contains('home-v44-section'));
+
+    const byHeading=needle=>sections.find(el=>(el.querySelector('.h2')?.textContent||'').trim().toLowerCase().includes(needle));
+    const today=byHeading('idag');
+    const actions=byHeading('agera');
+    const stats=byHeading('materialvinst');
+    const quick=byHeading('snabbt');
+    const recent=byHeading('senaste');
+
+    const grid=document.createElement('div');
+    grid.className='desktop-grid-v92';
+    const left=document.createElement('div');
+    left.className='desktop-col-v92 desktop-col-left-v92';
+    const right=document.createElement('div');
+    right.className='desktop-col-v92 desktop-col-right-v92';
+
+    [breakEven,today,stats,recent].filter(Boolean).forEach(el=>left.appendChild(el));
+    [backup,guide,ask,actions,quick].filter(Boolean).forEach(el=>right.appendChild(el));
+
+    // Fånga eventuella nya startsideskort som inte fanns när v92 byggdes.
+    const claimed=new Set([header,greeting,nav,fab,breakEven,backup,guide,ask,today,actions,stats,quick,recent].filter(Boolean));
+    children.filter(el=>!claimed.has(el)).forEach(el=>right.appendChild(el));
+
+    grid.append(left,right);
+    const anchor=greeting?.nextSibling||null;
+    $app.insertBefore(grid,anchor);
+
+    if(nav) $app.appendChild(nav);
+    if(fab) $app.appendChild(fab);
   }
 
   const oldRender=render;
@@ -135,5 +195,6 @@
     return result;
   };
 
+  window.addEventListener('resize',()=>{ if(st?.view==='home') render(); });
   syncDesktopClass();
 })();
