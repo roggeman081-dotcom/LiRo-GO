@@ -73,6 +73,10 @@ jobs:
           if (!home.includes('todayExternalV89') || !home.includes('Outlook') || !home.includes('maybeSyncCalendarV89')) throw new Error('Startsidan saknar Outlook-agenda');
           if (!html.includes("prop==='DTEND'") || !html.includes("end: e.dtend?.date")) throw new Error('ICS-sluttid parsas inte');
           if (!html.includes('LIRO_ICAL_PROXY_URL') || !html.includes("method:'POST'") || !html.includes('outlook-calendar-proxy')) throw new Error('Kalendersynk använder inte LiRo-proxyn');
+          const desktop = fs.readFileSync('desktop-v92.js','utf8');
+          if (!desktop.includes('liro-desktop-home') || !desktop.includes('@media (min-width:900px)')) throw new Error('Desktop-layouten saknas');
+          const nav = fs.readFileSync('nav-v56.js','utf8');
+          if (!nav.includes("if(act==='nav-home')") || !nav.includes("st={view:'home'}")) throw new Error('Hem-knappen stänger inte paneler direkt');
           if (!html.includes('function currentIcalEvents') || !html.includes("range:'today+180d'")) throw new Error('Kalendern filtrerar inte bort gamla Outlook-händelser');
 
           // v78: tilläggslagren ska laddas direkt av index.html, inte bara via service workern.
@@ -268,6 +272,32 @@ jobs:
 
             const parsedIcs = await page.evaluate(() => parseICS('BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Test\nDTSTART:20260929T140000\nDTEND:20260929T150000\nEND:VEVENT\nEND:VCALENDAR'));
             if (!parsedIcs[0]?.end) throw new Error('ICS DTEND saknas efter parsing');
+
+
+            // v92: Hem i bottenmenyn ska stänga Inställningar direkt.
+            await page.evaluate(() => {
+              st={view:'home'};
+              settingsOpen=true;
+              st.settingsTab='calendar';
+              render();
+            });
+            await page.locator('.bottomnav [data-act="nav-home"]').click();
+            const homeState = await page.evaluate(() => ({view:st.view,settingsOpen,calendarOpen,tab:st.settingsTab||null}));
+            if (homeState.view!=='home' || homeState.settingsOpen || homeState.calendarOpen || homeState.tab) {
+              throw new Error('Hem stängde inte paneler direkt: '+JSON.stringify(homeState));
+            }
+
+            // v92: bred desktop ska få tvåkolumns dashboard.
+            await page.setViewportSize({width:1440,height:1000});
+            await page.evaluate(() => { st={view:'home'}; settingsOpen=false; calendarOpen=false; render(); });
+            const desktopState = await page.evaluate(() => ({
+              desktopHome:document.body.classList.contains('liro-desktop-home'),
+              display:getComputedStyle(document.getElementById('app')).display,
+              columns:getComputedStyle(document.getElementById('app')).gridTemplateColumns
+            }));
+            if (!desktopState.desktopHome || desktopState.display!=='grid' || !desktopState.columns.includes(' ')) {
+              throw new Error('Desktop-dashboard aktiverades inte: '+JSON.stringify(desktopState));
+            }
 
             const criticalErrors = errors.filter(e => !e.includes('favicon') && !e.includes('Service Worker'));
             if (criticalErrors.length) throw new Error('Kärnapp JavaScript-fel: ' + criticalErrors.join(' | '));
