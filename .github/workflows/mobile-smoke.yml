@@ -90,6 +90,9 @@ jobs:
           for (const l of layers) if (!html.includes(`src="./${l}"`)) throw new Error('index.html laddar inte lagret ' + l);
           if (sw.includes('injectHomeOverlay')) throw new Error('sw.js injicerar fortfarande skript');
           if (!refs.includes('zxing_reader.wasm') || !refs.includes('barcode-polyfill.js')) throw new Error('Streckkodsläsaren är inte offline-cachad');
+          const barcode96 = fs.readFileSync('barcode-v96.js','utf8');
+          if (!barcode96.includes('Ta bild av streckkod') || !barcode96.includes('applyBarcodeV96') || !barcode96.includes('startLiveV96')) throw new Error('Robust streckkodsläsare v96 saknas');
+          if (!html.includes('src="./barcode-v96.js"') || !refs.includes('barcode-v96.js')) throw new Error('barcode-v96.js laddas/cachas inte');
           if (fs.readFileSync('barcode-polyfill.js','utf8').includes('jsdelivr')) throw new Error('Streckkodsläsaren hämtar fortfarande från CDN');
           if (!html.includes('async function shrinkPhoto(')) throw new Error('Fotokrympning saknas');
 
@@ -381,6 +384,16 @@ jobs:
               return {left:p?.left||0,width:p?.width||0,viewport:innerWidth,matPanel:!!st.matPanel};
             });
             if (!materialPanelState.matPanel || materialPanelState.left<100 || materialPanelState.width<1000) throw new Error('Materialpanelen är inte desktop-anpassad: '+JSON.stringify(materialPanelState));
+
+            // v96: streckkodsläsaren ska öppna även om CI saknar fysisk kamera och manuell fallback ska fungera.
+            await page.locator('[data-act="scan-barcode"]').first().click();
+            await page.locator('.scanner96').waitFor({state:'visible',timeout:5000});
+            if (await page.locator('[data-barcode-photo-v96]').count() !== 1) throw new Error('Foto-fallback saknas i streckkodsläsaren');
+            await page.locator('[data-barcode-manual-v96]').fill('12345678');
+            await page.locator('[data-barcode-use-v96]').click();
+            await page.waitForFunction(() => st.matSearch==='12345678', null, {timeout:5000});
+            await page.waitForFunction(() => !st.scannerOpen, null, {timeout:5000});
+            if (await page.locator('.scanner96').count()) throw new Error('Streckkodsläsaren stängdes inte efter kod');
             const liroButton=page.locator('[data-mat83="open"]').first();
             if (await liroButton.count()) {
               await liroButton.click();
