@@ -154,7 +154,8 @@
       setScannerMsgV96('Rikta streckkoden innanför ramen. Håll telefonen stilla en kort stund.');
       scanLoopV96(video,detector);
     }catch(err){
-      console.error('barcode v96 camera',err);
+      const expectedPermissionError=err && ['NotAllowedError','SecurityError','NotFoundError','NotReadableError','NotSupportedError'].includes(err.name);
+      if(!expectedPermissionError) console.error('barcode v96 camera',err);
       st.scannerLoading=false;
       const msg=typeof cameraErrorText==='function'?cameraErrorText(err):'Kunde inte starta kameran.';
       setScannerMsgV96(msg+' Du kan använda “Ta bild” istället.',true);
