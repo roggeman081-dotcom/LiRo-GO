@@ -100,6 +100,9 @@ jobs:
           const work99 = fs.readFileSync('work-v99.js','utf8');
           if (!html.includes('src="./work-v99.js"') || !refs.includes('work-v99.js')) throw new Error('work-v99.js laddas/cachas inte');
           if (!work99.includes('Under jobbet') || !work99.includes('work99-primary') || !work99.includes('Diktera material')) throw new Error('Förenklad arbetsvy v99 saknas');
+          const before100 = fs.readFileSync('before-v100.js','utf8');
+          if (!html.includes('src="./before-v100.js"') || !refs.includes('before-v100.js')) throw new Error('before-v100.js laddas/cachas inte');
+          if (!before100.includes('Före jobbet') || !before100.includes('Förbered jobbet') || !before100.includes('Börja jobba')) throw new Error('Före jobbet-vyn v100 saknas');
           if (fs.readFileSync('barcode-polyfill.js','utf8').includes('jsdelivr')) throw new Error('Streckkodsläsaren hämtar fortfarande från CDN');
           if (!html.includes('async function shrinkPhoto(')) throw new Error('Fotokrympning saknas');
 
@@ -264,6 +267,26 @@ jobs:
             if (saved.sitePostalCode !== '252 20') throw new Error('Fel postnummer sparades: ' + JSON.stringify(saved));
             if (saved.customerAddress !== null) throw new Error('Tom kundadress sparades fel: ' + JSON.stringify(saved));
             if (saved.saveAsContact !== false) throw new Error('Spara som kontakt blev felaktigt aktivt: ' + JSON.stringify(saved));
+
+            // v100: Före jobbet ska samla förberedelserna i en panel.
+            await page.evaluate(() => {
+              const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
+              st={view:'job',id:j.id,jobTab:'oversikt'};
+              render();
+            });
+            const beforeButton=page.locator('[data-v100="open"]').first();
+            await beforeButton.waitFor({state:'visible',timeout:5000});
+            await beforeButton.click();
+            await page.locator('.before100-panel').waitFor({state:'visible',timeout:5000});
+            const beforeState=await page.evaluate(()=>({
+              cards:document.querySelectorAll('.before100-card').length,
+              text:document.querySelector('.before100-panel')?.innerText||''
+            }));
+            if (beforeState.cards!==4 || !beforeState.text.includes('Tid & arbete') || !beforeState.text.includes('Planerat material') || !beforeState.text.includes('Att göra') || !beforeState.text.includes('Pris & debitering') || !beforeState.text.includes('Börja jobba')) {
+              throw new Error('Före jobbet-vyn v100 är fel: '+JSON.stringify(beforeState));
+            }
+            await page.locator('[data-v100="close"]').click();
+            if (await page.locator('.before100-panel').count()) throw new Error('Före jobbet-panelen stängdes inte');
 
             // v99: arbetsläget ska vara förenklat till fem primära vardagsfunktioner.
             await page.evaluate(() => {
