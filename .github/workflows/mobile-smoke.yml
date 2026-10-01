@@ -97,6 +97,9 @@ jobs:
           const barcode96 = fs.readFileSync('barcode-v96.js','utf8');
           if (!barcode96.includes('Ta bild av streckkod') || !barcode96.includes('applyBarcodeV96') || !barcode96.includes('startLiveV96')) throw new Error('Robust streckkodsläsare v96 saknas');
           if (!html.includes('src="./barcode-v96.js"') || !refs.includes('barcode-v96.js')) throw new Error('barcode-v96.js laddas/cachas inte');
+          const work99 = fs.readFileSync('work-v99.js','utf8');
+          if (!html.includes('src="./work-v99.js"') || !refs.includes('work-v99.js')) throw new Error('work-v99.js laddas/cachas inte');
+          if (!work99.includes('Under jobbet') || !work99.includes('work99-primary') || !work99.includes('Diktera material')) throw new Error('Förenklad arbetsvy v99 saknas');
           if (fs.readFileSync('barcode-polyfill.js','utf8').includes('jsdelivr')) throw new Error('Streckkodsläsaren hämtar fortfarande från CDN');
           if (!html.includes('async function shrinkPhoto(')) throw new Error('Fotokrympning saknas');
 
@@ -261,6 +264,27 @@ jobs:
             if (saved.sitePostalCode !== '252 20') throw new Error('Fel postnummer sparades: ' + JSON.stringify(saved));
             if (saved.customerAddress !== null) throw new Error('Tom kundadress sparades fel: ' + JSON.stringify(saved));
             if (saved.saveAsContact !== false) throw new Error('Spara som kontakt blev felaktigt aktivt: ' + JSON.stringify(saved));
+
+            // v99: arbetsläget ska vara förenklat till fem primära vardagsfunktioner.
+            await page.evaluate(() => {
+              const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
+              st={view:'work',id:j.id};
+              render();
+            });
+            await page.locator('.work99-screen').waitFor({state:'visible',timeout:5000});
+            const work99State=await page.evaluate(()=>({
+              primary:document.querySelectorAll('.work99-primary').length,
+              secondary:document.querySelectorAll('.work99-secondary button').length,
+              text:document.querySelector('.work99-screen')?.innerText||''
+            }));
+            if (work99State.primary!==5 || work99State.secondary!==3 || !work99State.text.includes('Under jobbet') || !work99State.text.includes('Mätvärde') || !work99State.text.includes('Kontroll')) {
+              throw new Error('Under jobbet-vyn v99 är fel: '+JSON.stringify(work99State));
+            }
+            await page.evaluate(() => {
+              const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
+              st={view:'job',id:j.id,jobTab:'material'};
+              render();
+            });
 
             // Materialförslagets knappar ska fungera oberoende av Registrera material-panelen.
             await page.evaluate(async () => {
