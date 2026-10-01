@@ -90,6 +90,8 @@ jobs:
           for (const l of layers) if (!html.includes(`src="./${l}"`)) throw new Error('index.html laddar inte lagret ' + l);
           if (sw.includes('injectHomeOverlay')) throw new Error('sw.js injicerar fortfarande skript');
           if (!refs.includes('zxing_reader.wasm') || !refs.includes('barcode-polyfill.js')) throw new Error('Streckkodsläsaren är inte offline-cachad');
+          if (!sw.includes("const EXPORT_CACHE = 'lirogo-export-libs-v63'")) throw new Error('Exportbibliotekens cache saknas');
+          if (!sw.includes('jspdf@2.5.2') || !sw.includes('xlsx@0.18.5')) throw new Error('PDF/Excel-biblioteken precachas inte');
           const barcode96 = fs.readFileSync('barcode-v96.js','utf8');
           if (!barcode96.includes('Ta bild av streckkod') || !barcode96.includes('applyBarcodeV96') || !barcode96.includes('startLiveV96')) throw new Error('Robust streckkodsläsare v96 saknas');
           if (!html.includes('src="./barcode-v96.js"') || !refs.includes('barcode-v96.js')) throw new Error('barcode-v96.js laddas/cachas inte');
@@ -163,6 +165,18 @@ jobs:
             if (!swState.active) throw new Error('Service worker blev inte aktiv');
             if (!swState.expected || !swState.cacheKeys.includes(swState.expected)) {
               throw new Error('Aktuell PWA-cache saknas: ' + JSON.stringify(swState));
+            }
+
+            const exportCacheState = await pwa.evaluate(async () => {
+              const cache = await caches.open('lirogo-export-libs-v63');
+              const keys = (await cache.keys()).map(r => r.url);
+              return {
+                jspdf: keys.some(u => u.includes('jspdf@2.5.2/dist/jspdf.umd.min.js')),
+                xlsx: keys.some(u => u.includes('xlsx@0.18.5/dist/xlsx.full.min.js'))
+              };
+            });
+            if (!exportCacheState.jspdf || !exportCacheState.xlsx) {
+              throw new Error('Exportbiblioteken saknas i offline-cache: ' + JSON.stringify(exportCacheState));
             }
 
             const criticalPwaErrors = pwaErrors.filter(e => !e.includes('favicon'));
