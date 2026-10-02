@@ -298,7 +298,7 @@ jobs:
             await page.locator('[data-v100="close"]').click();
             if (await page.locator('.before100-panel').count()) throw new Error('Före jobbet-panelen stängdes inte');
 
-            // v99: arbetsläget ska vara förenklat till fem primära vardagsfunktioner.
+            // v102: arbetsläget ska vara förenklat till sex primära funktioner utan sekundär meny.
             await page.evaluate(() => {
               const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
               st={view:'work',id:j.id};
@@ -310,8 +310,11 @@ jobs:
               secondary:document.querySelectorAll('.work99-secondary button').length,
               text:document.querySelector('.work99-screen')?.innerText||''
             }));
-            if (work99State.primary!==5 || work99State.secondary!==3 || !work99State.text.includes('Under jobbet') || !work99State.text.includes('Mätvärde') || !work99State.text.includes('Kontroll')) {
-              throw new Error('Under jobbet-vyn v99 är fel: '+JSON.stringify(work99State));
+            for (const label of ['Material','Foto','Logga jobbet','Mätvärde','Kontroll','Fråga LiRo']) {
+              if (!work99State.text.includes(label)) throw new Error('Under jobbet saknar funktion: '+label+' '+JSON.stringify(work99State));
+            }
+            if (work99State.primary!==6 || work99State.secondary!==0 || !work99State.text.includes('Under jobbet')) {
+              throw new Error('Under jobbet-vyn v102 är fel: '+JSON.stringify(work99State));
             }
             await page.evaluate(() => {
               const j=jobs.find(x=>x.title==='Smoke Test Uppdrag');
