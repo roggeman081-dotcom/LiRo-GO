@@ -99,7 +99,17 @@ jobs:
           if (!html.includes('src="./barcode-v96.js"') || !refs.includes('barcode-v96.js')) throw new Error('barcode-v96.js laddas/cachas inte');
           const work99 = fs.readFileSync('work-v99.js','utf8');
           if (!html.includes('src="./work-v99.js"') || !refs.includes('work-v99.js')) throw new Error('work-v99.js laddas/cachas inte');
-          if (!work99.includes('Under jobbet') || !work99.includes('work99-primary') || !work99.includes('Diktera material')) throw new Error('Förenklad arbetsvy v99 saknas');
+          if (!work99.includes('Under jobbet') || !work99.includes('work99-primary')) throw new Error('Förenklad arbetsvy v99 saknas');
+          for (const marker of [
+            'data-act="open-mat-panel"',
+            'data-photo-input="1"',
+            'data-act="work-capture"',
+            'data-v67="work-measure"',
+            'data-act="work-goto-kontroll"',
+            'data-act="work-ai"'
+          ]) {
+            if (!work99.includes(marker)) throw new Error('Arbetsvyn saknar huvudfunktion: ' + marker);
+          }
           const before100 = fs.readFileSync('before-v100.js','utf8');
           if (!html.includes('src="./before-v100.js"') || !refs.includes('before-v100.js')) throw new Error('before-v100.js laddas/cachas inte');
           if (!before100.includes('Före jobbet') || !before100.includes('Förbered jobbet') || !before100.includes('Börja jobba')) throw new Error('Före jobbet-vyn v100 saknas');
