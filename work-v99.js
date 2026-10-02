@@ -46,6 +46,26 @@
     return {materials,photos,check};
   }
 
+  const oldWorkCapturePanelV99=window.vWorkCapturePanel;
+  if(typeof oldWorkCapturePanelV99==='function'){
+    window.vWorkCapturePanel=function(job){
+      let html=oldWorkCapturePanelV99(job);
+      html=html.replace("<h1>Berätta jobbet</h1>","<h1>Logga jobbet</h1>");
+      const marker=`<div class="mat-panel-sub">${esc(job.title)}</div>`;
+      const extra=marker+`<button type="button" class="tile row-tile" style="margin-top:12px" data-v99="open-quick-note">${ICON.save}<span class="t-text">Snabbanteckning<span class="t-sub" style="display:block">Öppna den enkla anteckningen</span></span>${ICON.chevronRight}</button>`;
+      return html.replace(marker,extra);
+    };
+  }
+
+  document.addEventListener("click",function(e){
+    const el=e.target.closest&&e.target.closest("[data-v99]");
+    if(!el||el.dataset.v99!=="open-quick-note") return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    st.workCaptureOpen=false;
+    st.workNoteOpen=true;
+    render();
+  },true);
   window.vArbetslage=function(job){
     const c=counts(job);
     return `
@@ -72,16 +92,10 @@
             ${ICON.camera}<span>Foto</span>
             <input type="file" accept="image/*" capture="environment" data-photo-input="1">
           </label>
-          <button class="work99-primary" data-act="work-note">${ICON.save}<span>Anteckning</span></button>
+          <button class="work99-primary" data-act="work-capture">${ICON.mic}<span>Logga jobbet</span></button>
           <button class="work99-primary" data-v67="work-measure">${ICON.gauge}<span>Mätvärde</span></button>
-          <button class="work99-primary wide" data-act="work-goto-kontroll">${ICON.gauge}<span>Kontroll</span></button>
-        </div>
-
-        <div class="work99-label">Snabbhjälp</div>
-        <div class="work99-secondary">
-          <button data-v67="work-dictate-material">${ICON.mic}<span>Diktera material</span></button>
-          <button data-act="work-capture">${ICON.mic}<span>Berätta jobbet</span></button>
-          <button data-act="work-ai">${ICON.sparkle}<span>Fråga LiRo</span></button>
+          <button class="work99-primary" data-act="work-goto-kontroll">${ICON.gauge}<span>Kontroll</span></button>
+          <button class="work99-primary" data-act="work-ai">${ICON.sparkle}<span>Fråga LiRo</span></button>
         </div>
       </div>
       ${st.matPanel ? vMaterialPanel(job) : ''}
