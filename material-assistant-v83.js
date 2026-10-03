@@ -58,6 +58,63 @@
     };
   }
 
+  function extractJsonObject(raw){
+    const text=String(raw??'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
+    const first=text.indexOf('{');
+    if(first<0) return null;
+    let depth=0, inString=false, escapeNext=false;
+    for(let i=first;i<text.length;i++){
+      const ch=text[i];
+      if(inString){
+        if(escapeNext){ escapeNext=false; continue; }
+        if(ch==='\\'){ escapeNext=true; continue; }
+        if(ch==='"') inString=false;
+        continue;
+      }
+      if(ch==='"'){ inString=true; continue; }
+      if(ch==='{') depth++;
+      else if(ch==='}'){
+        depth--;
+        if(depth===0) return text.slice(first,i+1);
+      }
+    }
+    return text.slice(first);
+  }
+
+  function parseMaterialJson(raw){
+    const candidate=extractJsonObject(raw);
+    if(!candidate) return null;
+    const attempts=[
+      candidate,
+      candidate.replace(/,\s*([}\]])/g,'$1'),
+      candidate.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,' ')
+    ];
+    for(const text of attempts){
+      try{
+        const parsed=JSON.parse(text);
+        if(parsed&&typeof parsed==='object') return parsed;
+      }catch{}
+    }
+    return null;
+  }
+
+  async function repairMaterialJson(raw){
+    const repairSystem=[
+      'Du reparerar JSON för LiRo GO.',
+      'Returnera ENDAST ett giltigt JSON-objekt utan markdown, kommentarer eller förklaringar.',
+      'Behåll innebörden i underlaget men rätta endast syntax och struktur.',
+      'Tillåtna toppfält: summary, components, occupiedModules, recommendedEnclosureModules, reserveModules, dinRailHint, extras, verify.',
+      'components ska vara en array av objekt med name, qty, moduleWidth, totalModules, certainty, note och searchTerm.',
+      'Använd null när ett numeriskt värde saknas. Hitta inte på artikelnummer eller exakta produktdata.'
+    ].join(' ');
+    const repaired=await anthropicMessage({
+      max_tokens:1400,
+      system:repairSystem,
+      messages:[{role:'user',content:'Reparera detta svar till giltig JSON:\n'+String(raw??'')}]
+    });
+    return parseMaterialJson(repaired);
+  }
+
   async function askMaterialPlan(request){
     if(typeof anthropicMessage!=='function') throw new Error('AI-funktionen är inte tillgänglig');
     const system=[
@@ -69,7 +126,8 @@
       'När en uppgift beror på fabrikat eller produktserie: markera certainty="estimate" och skriv vad som måste verifieras.',
       'Föreslå reservutrymme praktiskt, normalt cirka 20–30 procent och minst några fria moduler, men förklara om annan reserv behövs.',
       'Ta med relevanta kompletteringar som N-/PE-skenor, fasskena/anslutningar, blindmoduler och märkning endast när de är rimliga.',
-      'Svara ENDAST med giltig JSON utan markdown.',
+      'Svara ENDAST med giltig JSON utan markdown, kommentarer eller text före/efter JSON.',
+      'Alla strängar måste vara korrekt JSON-escapade. Använd inte radbrytningar inuti strängvärden.',
       'Schema: {"summary":"string","components":[{"name":"string","qty":1,"moduleWidth":2,"totalModules":2,"certainty":"known|estimate|unknown","note":"string","searchTerm":"string"}],"occupiedModules":11,"recommendedEnclosureModules":18,"reserveModules":7,"dinRailHint":"string","extras":["string"],"verify":["string"]}.',
       'Om du inte kan räkna säkert, använd null för modulvärden och lägg orsaken i verify.'
     ].join(' ');
@@ -78,11 +136,12 @@
       system,
       messages:[{role:'user',content:String(request||'').trim()}]
     });
-    const match=String(raw||'').match(/\{[\s\S]*\}/);
-    if(!match) throw new Error('LiRo kunde inte tolka materialförslaget');
-    let parsed;
-    try{ parsed=JSON.parse(match[0]); }
-    catch{ throw new Error('LiRo gav ett ogiltigt materialförslag'); }
+    let parsed=parseMaterialJson(raw);
+    if(!parsed){
+      try{ parsed=await repairMaterialJson(raw); }
+      catch{}
+    }
+    if(!parsed) throw new Error('LiRo kunde inte tolka materialförslaget. Försök igen.');
     return normalizePlan(parsed);
   }
 
