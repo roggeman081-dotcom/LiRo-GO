@@ -58,3 +58,111 @@
     render();
   },true);
 })();
+
+
+/* LiRo GO kundimport 2026-10-03 – 276 kunder från kundlista.
+   Engångsimport, dublettsäker och utan att skriva över befintliga uppgifter. */
+(function(){
+  'use strict';
+  const IMPORT_KEY='lirogo_customer_import_2026_10_03_v1';
+  if(localStorage.getItem(IMPORT_KEY)==='done') return;
+
+  const FILES=[
+    './customers-import-1.json','./customers-import-2.json','./customers-import-3.json',
+    './customers-import-4.json','./customers-import-5.json','./customers-import-6.json'
+  ];
+
+  const norm=v=>(v||'').toString().trim().toLowerCase().replace(/\s+/g,' ');
+  const digits=v=>(v||'').toString().replace(/\D/g,'');
+  const sameCustomer=(a,b)=>{
+    if(a.customerNumber&&b.customerNumber&&norm(a.customerNumber)===norm(b.customerNumber)) return true;
+    if(a.orgNumber&&b.orgNumber&&digits(a.orgNumber)&&digits(a.orgNumber)===digits(b.orgNumber)) return true;
+    if(a.email&&b.email&&norm(a.email)===norm(b.email)) return true;
+    if(a.name&&b.name&&norm(a.name)===norm(b.name)){
+      if(a.address&&b.address&&norm(a.address)===norm(b.address)) return true;
+      const ap=digits(a.mobile||a.phone),bp=digits(b.mobile||b.phone);
+      if(ap&&bp&&ap===bp) return true;
+    }
+    return false;
+  };
+
+  const toCustomer=r=>({
+    customerNumber:r[0]||null,name:r[1]||'',address:r[2]||null,city:r[3]||null,postalCode:r[4]||null,
+    phone:r[5]||r[6]||null,mobile:r[6]||null,orgNumber:r[7]||null,vatNumber:r[8]||null,email:r[9]||null
+  });
+
+  const mergeMissing=(existing,incoming)=>{
+    const out={...existing};
+    ['customerNumber','phone','mobile','email','address','postalCode','city','orgNumber','vatNumber']
+      .forEach(k=>{ if(!out[k]&&incoming[k]) out[k]=incoming[k]; });
+    if(typeof out.isCompany!=='boolean') out.isCompany=!!(out.orgNumber||out.vatNumber);
+    return out;
+  };
+
+  async function loadRows(){
+    const all=[];
+    for(const file of FILES){
+      const res=await fetch(file+'?v=104',{cache:'no-store'});
+      if(!res.ok) throw new Error('Kundimport kunde inte läsa '+file);
+      const part=await res.json();
+      all.push(...part);
+    }
+    return all.map(toCustomer);
+  }
+
+  async function run(){
+    if(typeof DB==='undefined'||!DB||typeof dbAll!=='function'||typeof dbPut!=='function') return false;
+    const rows=await loadRows();
+    const existing=await dbAll('customers');
+    const now=new Date().toISOString();
+    let added=0,enriched=0;
+
+    for(const r of rows){
+      if(!r.name) continue;
+      const match=existing.find(x=>sameCustomer(x,r));
+      if(match){
+        const merged=mergeMissing(match,r);
+        const changed=JSON.stringify(merged)!==JSON.stringify(match);
+        if(changed){
+          merged.updatedAt=now;
+          await dbPut('customers',merged);
+          Object.assign(match,merged);
+          enriched++;
+        }
+        continue;
+      }
+      const c={
+        id:'legacy-'+(r.customerNumber||('row-'+added+'-'+Date.now())),
+        customerNumber:r.customerNumber,name:r.name,phone:r.phone,mobile:r.mobile,email:r.email,address:r.address,
+        postalCode:r.postalCode,city:r.city,saveAsContact:false,isCompany:!!(r.orgNumber||r.vatNumber),
+        orgNumber:r.orgNumber,vatNumber:r.vatNumber,invoiceAddress:null,invoicePostalCode:null,invoiceCity:null,
+        invoiceReference:null,glnNumber:null,source:'legacy-customer-list-2026-10-03',createdAt:now,updatedAt:now
+      };
+      await dbPut('customers',c);
+      existing.push(c);
+      added++;
+    }
+
+    customers=await dbAll('customers');
+    localStorage.setItem(IMPORT_KEY,'done');
+    console.info('LiRo GO kundimport klar',{added,enriched,total:customers.length});
+    try{ if(typeof render==='function') render(); }catch(e){}
+    return true;
+  }
+
+  let tries=0,busy=false;
+  const timer=setInterval(async()=>{
+    if(busy) return;
+    busy=true;
+    tries++;
+    try{
+      if(await run()) clearInterval(timer);
+      else if(tries>80) clearInterval(timer);
+    }catch(err){
+      console.error('LiRo GO kundimport misslyckades',err);
+      if(tries>80) clearInterval(timer);
+    }finally{
+      busy=false;
+    }
+  },250);
+})();
