@@ -11,7 +11,11 @@ const EXPORT_LIBS = [
   'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
   'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
 ];
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js', './work-v99.js', './before-v100.js', './material-assistant-v83.js', './desktop-v92.js', './stats-v94.js', './barcode-v96.js', './quickflow-v103.js', './barcode-polyfill.js', './zxing_reader.wasm'];
+const CUSTOMER_IMPORT_FILES = [
+  './customers-import-1.json','./customers-import-2.json','./customers-import-3.json',
+  './customers-import-4.json','./customers-import-5.json','./customers-import-6.json'
+];
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js', './work-v99.js', './before-v100.js', './material-assistant-v83.js', './desktop-v92.js', './stats-v94.js', './barcode-v96.js', './quickflow-v103.js', './barcode-polyfill.js', './zxing_reader.wasm', ...CUSTOMER_IMPORT_FILES];
 
 self.addEventListener('install', e => {
   e.waitUntil((async()=>{
@@ -29,12 +33,97 @@ self.addEventListener('install', e => {
   })());
 });
 
+const norm=v=>(v||'').toString().trim().toLowerCase().replace(/\s+/g,' ');
+const digits=v=>(v||'').toString().replace(/\D/g,'');
+const sameCustomer=(a,b)=>{
+  if(a.customerNumber&&b.customerNumber&&norm(a.customerNumber)===norm(b.customerNumber)) return true;
+  if(a.orgNumber&&b.orgNumber&&digits(a.orgNumber)&&digits(a.orgNumber)===digits(b.orgNumber)) return true;
+  if(a.email&&b.email&&norm(a.email)===norm(b.email)) return true;
+  if(a.name&&b.name&&norm(a.name)===norm(b.name)){
+    if(a.address&&b.address&&norm(a.address)===norm(b.address)) return true;
+    const ap=digits(a.mobile||a.phone),bp=digits(b.mobile||b.phone);
+    if(ap&&bp&&ap===bp) return true;
+  }
+  return false;
+};
+
+async function importLegacyCustomersSW(){
+  try{
+    if(typeof indexedDB.databases!=='function') return;
+    const dbs=await indexedDB.databases();
+    if(!dbs.some(d=>d.name==='lirogo')) return;
+
+    const rows=[];
+    for(const file of CUSTOMER_IMPORT_FILES){
+      const res=await fetch(file+'?v=104',{cache:'no-store'});
+      if(!res.ok) throw new Error('HTTP '+res.status+' '+file);
+      rows.push(...await res.json());
+    }
+
+    const incoming=rows.map(r=>({
+      customerNumber:r[0]||null,name:r[1]||'',address:r[2]||null,city:r[3]||null,postalCode:r[4]||null,
+      phone:r[5]||r[6]||null,mobile:r[6]||null,orgNumber:r[7]||null,vatNumber:r[8]||null,email:r[9]||null
+    }));
+
+    const db=await new Promise((resolve,reject)=>{
+      const req=indexedDB.open('lirogo');
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+    if(!db.objectStoreNames.contains('customers')){ db.close(); return; }
+
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction('customers','readwrite');
+      const store=tx.objectStore('customers');
+      const get=store.getAll();
+      get.onerror=()=>reject(get.error);
+      get.onsuccess=()=>{
+        const existing=get.result||[];
+        const now=new Date().toISOString();
+        let serial=0;
+        for(const r of incoming){
+          if(!r.name) continue;
+          const match=existing.find(x=>sameCustomer(x,r));
+          if(match){
+            const merged={...match};
+            ['customerNumber','phone','mobile','email','address','postalCode','city','orgNumber','vatNumber']
+              .forEach(k=>{ if(!merged[k]&&r[k]) merged[k]=r[k]; });
+            if(typeof merged.isCompany!=='boolean') merged.isCompany=!!(merged.orgNumber||merged.vatNumber);
+            if(JSON.stringify(merged)!==JSON.stringify(match)){
+              merged.updatedAt=now;
+              store.put(merged);
+              Object.assign(match,merged);
+            }
+            continue;
+          }
+          const c={
+            id:'legacy-'+(r.customerNumber||('sw-'+serial+++'-'+Date.now())),
+            customerNumber:r.customerNumber,name:r.name,phone:r.phone,mobile:r.mobile,email:r.email,address:r.address,
+            postalCode:r.postalCode,city:r.city,saveAsContact:false,isCompany:!!(r.orgNumber||r.vatNumber),
+            orgNumber:r.orgNumber,vatNumber:r.vatNumber,invoiceAddress:null,invoicePostalCode:null,invoiceCity:null,
+            invoiceReference:null,glnNumber:null,source:'legacy-customer-list-2026-10-03',createdAt:now,updatedAt:now
+          };
+          store.put(c);
+          existing.push(c);
+        }
+      };
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error);
+      tx.onabort=()=>reject(tx.error||new Error('Kundimport avbröts'));
+    });
+    db.close();
+  }catch(err){
+    console.warn('Service worker kunde inte importera kunder',err);
+  }
+}
+
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== 'lirogo-catalog-v60' && k !== EXPORT_CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async()=>{
+    const keys=await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE && k !== 'lirogo-catalog-v60' && k !== EXPORT_CACHE).map(k => caches.delete(k)));
+    await importLegacyCustomersSW();
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', e => {
@@ -66,7 +155,7 @@ self.addEventListener('fetch', e => {
     if(url.searchParams.has('refresh')){
       e.respondWith(toNetwork().catch(async()=>(await caches.match('./katalog-el.json',{ignoreSearch:true}))||unavailable()));
     }else{
-      e.respondWith(caches.match('./katalog-el.json',{ignoreSearch:true}).then(hit=>hit||toNetwork()).catch(unavailable));
+      e.respondWith(caches.match('./katalog-el.json',{ignoreSearch:true}).then(hit=>hit||toNetwork()).catch(unavailable()));
     }
     return;
   }
