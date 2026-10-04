@@ -1412,7 +1412,8 @@ async function fetchAiJobAnswer(job,question,deps){
     'Om något är oklart: välj den rimligaste tolkningen för en svensk elinstallation, svara utifrån den och skriv den sist på EN rad som börjar med "Antaget:". Högst en sådan rad.',
     'Använd exakt de antal och värden som står i frågan. "Resten" = totalen minus det som redan angetts. Kontrollräkna summan innan du svarar.',
     'Materialfrågor: svara enbart med en lista, en rad per artikel i formen "3 st Dvärgbrytare 3-pol C16". Utöver kapslingen: lägg inte till artiklar som inte efterfrågats och ersätt inte det som efterfrågats med något annat.',
-    'Gäller frågan en central eller apparater på DIN-skena: föreslå alltid en kapsling. Räkna moduler (1-pol dvärgbrytare 1, 3-pol 3, jordfelsbrytare 4-pol 4, huvudbrytare 3-pol 3 om inget annat sägs), lägg på cirka 20–30 procent reserv och avrunda uppåt till vanlig storlek (12, 24, 36, 48, 72 moduler). Skriv det som en egen artikelrad, t.ex. "1 st Kapsling 36 moduler (3x12), 25 mod belagda", fabrikatneutralt om inget fabrikat nämns. Hitta inte på artikelnummer.',
+    'Gäller frågan en central eller apparater på DIN-skena: avsluta varje apparatrad med radens totala modulantal i parentes, t.ex. "3 st Dvärgbrytare 3-pol C16 (9 mod)". Modulbredd per styck om inget annat sägs: dvärgbrytare 1-pol 1, 3-pol 3, jordfelsbrytare 2-pol 2, 4-pol 4, huvudbrytare 3-pol 3. Antal gånger bredd, kontrollräkna varje rad.',
+    'Lägg sedan alltid till en kapslingsrad: summera modulerna, lägg på minst 20 procent reserv och avrunda uppåt till 12, 24, 36, 48 eller 72 moduler. Form: "1 st Kapsling 36 moduler". Fabrikatneutralt om inget fabrikat nämns. Hitta inte på artikelnummer.',
     'Övriga frågor: högst 3 korta meningar.',
     'Projektminnet är fakta om jobbet. Hitta inte på mätvärden, kundbeslut eller utfört arbete.',
     'Vid säkerhetskritiska elfrågor: lägg till EN kort rad om vad som ska verifieras.',
@@ -1424,7 +1425,27 @@ async function fetchAiJobAnswer(job,question,deps){
     system,
     messages:[{role:'user',content:userContent}]
   });
-  return cleanLiRoAnswer(text);
+  return fixLiRoEnclosure(cleanLiRoAnswer(text));
+}
+/* Räknar om kapslingsraden i koden så modulantalet alltid stämmer med raderna ovanför:
+   summan av "(N mod)" + minst 20 % reserv, avrundat upp till standardstorlek. */
+function fixLiRoEnclosure(text){
+  const lines=String(text||'').split('\n');
+  const isEnc=l=>/^\W*\d+\s*st\s+kapsling/i.test(l);
+  let sum=0;
+  lines.forEach(l=>{ if(isEnc(l)) return; const m=l.match(/\((\d+)\s*mod(?:uler)?\)/i); if(m) sum+=Number(m[1]); });
+  if(!sum) return text;
+  const need=Math.ceil(sum*1.2);
+  const size=[12,24,36,48,72].find(n=>n>=need);
+  const row=size
+    ? '1 st Kapsling '+size+' moduler ('+sum+' belagda, '+(size-sum)+' lediga)'
+    : '1 st Kapsling minst '+need+' moduler ('+sum+' belagda) – dela på flera kapslingar eller välj skåp';
+  const at=lines.findIndex(isEnc);
+  if(at>=0){ lines[at]=(lines[at].match(/^\s*-\s*/)||[''])[0]+row; return lines.join('\n'); }
+  const prefix=lines.some(l=>/^\s*-\s/.test(l))?'- ':'';
+  const before=lines.findIndex(l=>/^\W*antaget\s*:/i.test(l));
+  if(before>=0) lines.splice(before,0,prefix+row); else lines.push(prefix+row);
+  return lines.join('\n');
 }
 /* Tar bort markdown som annars visas som råa tecken i svarskortet. */
 function cleanLiRoAnswer(text){
