@@ -1408,28 +1408,36 @@ async function fetchAiJobAnswer(job,question,deps){
   const system=[
     'Du är LiRo, en digital kollega till en svensk behörig elektriker. Han står på jobbet och vill ha svaret direkt.',
     'SVARA DIREKT. Ställ aldrig motfrågor. Upprepa eller sammanfatta inte frågan. Ingen inledning, ingen avslutning.',
-    'Frågan är ofta dikterad och kan innehålla talfel. Tolka fackmässigt: "gr" = grupper, "jfb"/"ifb" = jordfelsbrytare, "brytare" i en central = huvudbrytare, "3fas" = 3-polig, "1pol" = 1-polig, "amp" = A.',
-    'Om något är oklart: välj den rimligaste tolkningen för en svensk elinstallation, svara utifrån den och skriv den sist på EN rad som börjar med "Antaget:". Högst en sådan rad.',
-    'Använd exakt de antal och värden som står i frågan. "Resten" = totalen minus det som redan angetts. Kontrollräkna summan innan du svarar.',
-    'Materialfrågor: svara enbart med en lista, en rad per artikel i formen "3 st Dvärgbrytare 3-pol C16". Utöver kapslingen: lägg inte till artiklar som inte efterfrågats och ersätt inte det som efterfrågats med något annat.',
-    'Gäller frågan en central eller apparater på DIN-skena: avsluta varje apparatrad med radens totala modulantal i parentes, t.ex. "3 st Dvärgbrytare 3-pol C16 (9 mod)". Modulbredd per styck om inget annat sägs: dvärgbrytare 1-pol 1, 3-pol 3, jordfelsbrytare 2-pol 2, 4-pol 4, huvudbrytare 3-pol 3. Antal gånger bredd, kontrollräkna varje rad.',
-    'Lägg sedan alltid till en kapslingsrad: summera modulerna, lägg på minst 20 procent reserv och avrunda uppåt till 12, 24, 36, 48 eller 72 moduler. Form: "1 st Kapsling 36 moduler". Fabrikatneutralt om inget fabrikat nämns. Hitta inte på artikelnummer.',
-    'Övriga frågor: högst 3 korta meningar.',
+    'Frågan är ofta dikterad. Tolka fackmässigt: "säkringar" och "gr"/"grupper" = dvärgbrytare, "hb" och "brytare" = huvudbrytare, "jfb"/"ifb" = jordfelsbrytare, "3fas"/"3pol" = 3-polig, "1pol"/"vanliga" = 1-polig, "amp" = A.',
+    'MATERIALFRÅGOR – gör så här:',
+    '1) Varje sak som nämns i frågan blir en egen rad. Slå aldrig ihop två saker och tappa aldrig bort någon. Säkringar/grupper är aldrig samma sak som huvudbrytaren.',
+    '2) Använd exakt de antal och värden som står i frågan. "Resten" = totalen minus det som redan angetts. Saknas antal för en sak: sätt 1 st och säg det på Antaget-raden.',
+    '3) Flytta aldrig ett värde mellan saker. Ampere som sägs om säkringar gäller säkringarna, inte huvudbrytaren. Huvudbrytare utan angiven ström skrivs utan ampere.',
+    '4) Finns någon 3-polig apparat, eller gäller det villa, är centralen 3-fas: huvudbrytare 3-pol och jordfelsbrytare 4-pol 30 mA. Bara en uttalat 1-fas central får 2-polig jordfelsbrytare.',
+    '5) Avsluta varje apparatrad med radens totala modulantal: antal gånger bredd. Bredd per styck om inget annat sägs: dvärgbrytare 1-pol 1, 3-pol 3, jordfelsbrytare 2-pol 2, 4-pol 4, huvudbrytare 3-pol 3.',
+    '6) Sista artikelraden är alltid en kapsling. Ta med det som sagts om den (utanpåliggande, infälld, IP-klass, fabrikat). Fabrikatneutralt annars. Hitta inte på artikelnummer.',
+    '7) Lägg inte till andra artiklar än de som efterfrågats plus kapslingen.',
+    '8) Varje tolkning du gjort som inte står ordagrant i frågan ska stå på EN sista rad som börjar med "Antaget:". Gjorde du ingen tolkning: ingen sådan rad.',
+    'EXEMPEL 1. Fråga: "Elcentral med 16 säkringar. Vill ha 3st 3fas gr med 16 amp. Resten ska va 1pol 10amp: brytare och jfb". Svar:',
+    '3 st Dvärgbrytare 3-pol C16 (9 mod)\n13 st Dvärgbrytare 1-pol C10 (13 mod)\n1 st Huvudbrytare 3-pol (3 mod)\n1 st Jordfelsbrytare 4-pol 30 mA (4 mod)\n1 st Kapsling 36 moduler\nAntaget: 16 grupper totalt, C-karakteristik.',
+    'EXEMPEL 2. Fråga: "Skulle vilja ha en central med 3pol 16 amp säkringar, 10 vanliga 10amp, 1 pol. 1st hb och 1 Jfb. För en villa. Utanpåliggande". Svar:',
+    '1 st Dvärgbrytare 3-pol C16 (3 mod)\n10 st Dvärgbrytare 1-pol C10 (10 mod)\n1 st Huvudbrytare 3-pol (3 mod)\n1 st Jordfelsbrytare 4-pol 30 mA (4 mod)\n1 st Kapsling utanpåliggande 24 moduler\nAntaget: 1 st 3-pol C16 eftersom antal inte angavs, C-karakteristik.',
+    'ÖVRIGA FRÅGOR: högst 3 korta meningar. Vid säkerhetskritiska elfrågor: EN kort rad om vad som ska verifieras.',
     'Projektminnet är fakta om jobbet. Hitta inte på mätvärden, kundbeslut eller utfört arbete.',
-    'Vid säkerhetskritiska elfrågor: lägg till EN kort rad om vad som ska verifieras.',
     'Ren text på svenska. Ingen markdown: inga asterisker, rubriker eller fetstil. Högst 10 rader.'
-  ].join(' ');
+  ].join('\n');
   const userContent=['PROJEKTMINNE:',buildLiRoContextText(job,deps),'','FRÅGA:',question].join('\n');
   const text=await anthropicMessage({
     max_tokens:400,
     system,
     messages:[{role:'user',content:userContent}]
   });
-  return fixLiRoEnclosure(cleanLiRoAnswer(text));
+  return fixLiRoEnclosure(cleanLiRoAnswer(text),question);
 }
 /* Räknar om kapslingsraden i koden så modulantalet alltid stämmer med raderna ovanför:
-   summan av "(N mod)" + minst 20 % reserv, avrundat upp till standardstorlek. */
-function fixLiRoEnclosure(text){
+   summan av "(N mod)" + minst 20 % reserv, avrundat upp till standardstorlek.
+   Behåller det som sagts om kapslingen (utanpåliggande, infälld, IP-klass) – från AI-raden eller frågan. */
+function fixLiRoEnclosure(text,question){
   const lines=String(text||'').split('\n');
   const isEnc=l=>/^\W*\d+\s*st\s+kapsling/i.test(l);
   let sum=0;
@@ -1437,10 +1445,16 @@ function fixLiRoEnclosure(text){
   if(!sum) return text;
   const need=Math.ceil(sum*1.2);
   const size=[12,24,36,48,72].find(n=>n>=need);
-  const row=size
-    ? '1 st Kapsling '+size+' moduler ('+sum+' belagda, '+(size-sum)+' lediga)'
-    : '1 st Kapsling minst '+need+' moduler ('+sum+' belagda) – dela på flera kapslingar eller välj skåp';
   const at=lines.findIndex(isEnc);
+  const src=(at>=0?lines[at]:'')+' '+String(question||'');
+  const traits=[];
+  if(/utanpåliggande|utanpå\b/i.test(src)) traits.push('utanpåliggande');
+  else if(/infäll/i.test(src)) traits.push('infälld');
+  const ip=src.match(/\bIP\s?(\d{2})\b/i); if(ip) traits.push('IP'+ip[1]);
+  const kind='Kapsling'+(traits.length?' '+traits.join(' '):'');
+  const row=size
+    ? '1 st '+kind+' '+size+' moduler ('+sum+' belagda, '+(size-sum)+' lediga)'
+    : '1 st '+kind+' minst '+need+' moduler ('+sum+' belagda) – dela på flera kapslingar eller välj skåp';
   if(at>=0){ lines[at]=(lines[at].match(/^\s*-\s*/)||[''])[0]+row; return lines.join('\n'); }
   const prefix=lines.some(l=>/^\s*-\s/.test(l))?'- ':'';
   const before=lines.findIndex(l=>/^\W*antaget\s*:/i.test(l));
