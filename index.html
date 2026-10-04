@@ -1406,20 +1406,56 @@ async function applyAiWorkCapture(job, capture, options){
 /* ---- "Fråga LiRo AI" i arbetsläget — snabba praktiska svar med jobbet som kontext ---- */
 async function fetchAiJobAnswer(job,question,deps){
   const system=[
-    'Du är LiRo, en digital kollega till en svensk elektriker.',
-    'Du får en strukturerad projektkontext som är projektets arbetsminne.',
-    'Skilj alltid på fakta i projektet och egna förslag.',
-    'Hitta inte på värden, mätresultat, material, kundbeslut eller utfört arbete.',
-    'Om viktig information saknas, säg vad som saknas.',
-    'För säkerhetskritiska elfrågor ska du tydligt ange vad som behöver verifieras.',
-    'Svara kort, konkret och praktiskt på svenska. Normalt högst 4 meningar.'
+    'Du är LiRo, en digital kollega till en svensk behörig elektriker. Han står på jobbet och vill ha svaret direkt.',
+    'SVARA DIREKT. Ställ aldrig motfrågor. Upprepa eller sammanfatta inte frågan. Ingen inledning, ingen avslutning.',
+    'Frågan är ofta dikterad och kan innehålla talfel. Tolka fackmässigt: "gr" = grupper, "jfb"/"ifb" = jordfelsbrytare, "brytare" i en central = huvudbrytare, "3fas" = 3-polig, "1pol" = 1-polig, "amp" = A.',
+    'Om något är oklart: välj den rimligaste tolkningen för en svensk elinstallation, svara utifrån den och skriv den sist på EN rad som börjar med "Antaget:". Högst en sådan rad.',
+    'Använd exakt de antal och värden som står i frågan. "Resten" = totalen minus det som redan angetts. Kontrollräkna summan innan du svarar.',
+    'Materialfrågor: svara enbart med en lista, en rad per artikel i formen "3 st Dvärgbrytare 3-pol C16". Utöver kapslingen: lägg inte till artiklar som inte efterfrågats och ersätt inte det som efterfrågats med något annat.',
+    'Gäller frågan en central eller apparater på DIN-skena: avsluta varje apparatrad med radens totala modulantal i parentes, t.ex. "3 st Dvärgbrytare 3-pol C16 (9 mod)". Modulbredd per styck om inget annat sägs: dvärgbrytare 1-pol 1, 3-pol 3, jordfelsbrytare 2-pol 2, 4-pol 4, huvudbrytare 3-pol 3. Antal gånger bredd, kontrollräkna varje rad.',
+    'Lägg sedan alltid till en kapslingsrad: summera modulerna, lägg på minst 20 procent reserv och avrunda uppåt till 12, 24, 36, 48 eller 72 moduler. Form: "1 st Kapsling 36 moduler". Fabrikatneutralt om inget fabrikat nämns. Hitta inte på artikelnummer.',
+    'Övriga frågor: högst 3 korta meningar.',
+    'Projektminnet är fakta om jobbet. Hitta inte på mätvärden, kundbeslut eller utfört arbete.',
+    'Vid säkerhetskritiska elfrågor: lägg till EN kort rad om vad som ska verifieras.',
+    'Ren text på svenska. Ingen markdown: inga asterisker, rubriker eller fetstil. Högst 10 rader.'
   ].join(' ');
   const userContent=['PROJEKTMINNE:',buildLiRoContextText(job,deps),'','FRÅGA:',question].join('\n');
-  return anthropicMessage({
-    max_tokens:500,
+  const text=await anthropicMessage({
+    max_tokens:400,
     system,
     messages:[{role:'user',content:userContent}]
   });
+  return fixLiRoEnclosure(cleanLiRoAnswer(text));
+}
+/* Räknar om kapslingsraden i koden så modulantalet alltid stämmer med raderna ovanför:
+   summan av "(N mod)" + minst 20 % reserv, avrundat upp till standardstorlek. */
+function fixLiRoEnclosure(text){
+  const lines=String(text||'').split('\n');
+  const isEnc=l=>/^\W*\d+\s*st\s+kapsling/i.test(l);
+  let sum=0;
+  lines.forEach(l=>{ if(isEnc(l)) return; const m=l.match(/\((\d+)\s*mod(?:uler)?\)/i); if(m) sum+=Number(m[1]); });
+  if(!sum) return text;
+  const need=Math.ceil(sum*1.2);
+  const size=[12,24,36,48,72].find(n=>n>=need);
+  const row=size
+    ? '1 st Kapsling '+size+' moduler ('+sum+' belagda, '+(size-sum)+' lediga)'
+    : '1 st Kapsling minst '+need+' moduler ('+sum+' belagda) – dela på flera kapslingar eller välj skåp';
+  const at=lines.findIndex(isEnc);
+  if(at>=0){ lines[at]=(lines[at].match(/^\s*-\s*/)||[''])[0]+row; return lines.join('\n'); }
+  const prefix=lines.some(l=>/^\s*-\s/.test(l))?'- ':'';
+  const before=lines.findIndex(l=>/^\W*antaget\s*:/i.test(l));
+  if(before>=0) lines.splice(before,0,prefix+row); else lines.push(prefix+row);
+  return lines.join('\n');
+}
+/* Tar bort markdown som annars visas som råa tecken i svarskortet. */
+function cleanLiRoAnswer(text){
+  return String(text||'')
+    .replace(/\*\*([^*\n]+)\*\*/g,'$1')
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,:;!?]|$)/g,'$1$2')
+    .replace(/^#{1,6}\s+/gm,'')
+    .replace(/^[ \t]*[*•]\s+/gm,'- ')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
 }
 
 /* ---- AI-förslag i "På radarn" — läser avslutade projekt och föreslår mjuka uppföljningar ---- */
