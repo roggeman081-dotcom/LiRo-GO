@@ -56,10 +56,14 @@ jobs:
 
           const agreement=[
             agreementLine({cls:'QL0700',discount:649}),
+            agreementLine({cls:'QA5952',discount:770}),
+            agreementLine({cls:'QA0901',discount:686}),
             agreementLine({art:'9999999',net:1234})
           ].join('\n');
           const base=[
             baseLine({art:'2044120',gnp:12200,cls:'QL0700'}),
+            baseLine({art:'0445707',gnp:9750,cls:'QA5952'}),
+            baseLine({art:'0030960',gnp:9250,cls:'QA0901'}),
             baseLine({art:'9999999',gnp:99999,cls:'QL0700'}),
             baseLine({art:'8888888',gnp:4567,cls:'NOPE00'})
           ].join('\n');
@@ -67,6 +71,8 @@ jobs:
           const parsed=LiRoPrice.parseAgreement(agreement);
           const result=LiRoPrice.calculateFromBase(base,parsed);
           if(result.prices['2044120']!==42.82) throw new Error('Materialklassrabatt räknas fel: '+result.prices['2044120']);
+          if(result.prices['0445707']!==22.42) throw new Error('Half-even 22,425 ska bli 22,42: '+result.prices['0445707']);
+          if(result.prices['0030960']!==29.04) throw new Error('Half-even 29,045 ska bli 29,04: '+result.prices['0030960']);
           if(result.prices['9999999']!==12.34) throw new Error('Explicit nettopris prioriteras inte: '+result.prices['9999999']);
           if(result.prices['8888888']!==45.67) throw new Error('0 % rabatt ska ge beräkningsgrund/GNP: '+result.prices['8888888']);
 
@@ -74,7 +80,7 @@ jobs:
           if(unknown!==null) throw new Error('Artikel som inte finns i importerad beräkningsgrund fick pris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v118'")) throw new Error('PWA-cache är inte uppdaterad till v118');
+          if(!sw.includes("const CACHE = 'lirogo-v120'")) throw new Error('PWA-cache är inte uppdaterad till v120');
           if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
@@ -89,5 +95,5 @@ jobs:
           const barcode=fs.readFileSync('barcode-v96.js','utf8');
           if(!barcode.includes('barcodeCandidatesV110') || !barcode.includes("compact.slice(0,-1)")) throw new Error('Streckkod 1500136E normaliseras inte till E-nummer');
 
-          console.log('Prisregression OK', {version:LiRoPrice.version,classPrice:result.prices['2044120'],explicit:result.prices['9999999'],zeroDiscount:result.prices['8888888']});
+          console.log('Prisregression OK', {version:LiRoPrice.version,classPrice:result.prices['2044120'],halfEven1:result.prices['0445707'],halfEven2:result.prices['0030960'],explicit:result.prices['9999999'],zeroDiscount:result.prices['8888888']});
           NODE
