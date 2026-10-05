@@ -1,4 +1,4 @@
-/* LiRo GO v107 – global materialpris- och decimalhantering */
+/* LiRo GO v111 – global materialpris- och decimalhantering */
 (function(){
   'use strict';
   const KEY='lirogo_price_overrides';
@@ -14,8 +14,39 @@
   function byArt(a){const n=sv(read()[art(a)],NaN);return Number.isFinite(n)&&n>0?n:null;}
   function rowPrice(row){return row&&row[0]?byArt(row[0]):null;}
   function unitPrice(m){if(!m)return 0;if(m.eNr)return byArt(m.eNr)||0;return Math.max(0,sv(m.unitPrice,0));}
+
+  function syncRows(rows,persist=false){
+    let changed=0;
+    for(const m of (Array.isArray(rows)?rows:[])){
+      if(!m?.eNr) continue;
+      const p=byArt(m.eNr);
+      if(p==null || Number(m.unitPrice)===p) continue;
+      m.unitPrice=p;
+      m.priceMissing=false;
+      changed++;
+      if(persist && m.id && typeof dbPut==='function'){
+        Promise.resolve(dbPut('materials',m)).catch(()=>{});
+      }
+    }
+    return changed;
+  }
+
+  let storedSyncStarted=false;
+  async function syncStoredRows(){
+    if(storedSyncStarted || typeof dbAll!=='function') return;
+    storedSyncStarted=true;
+    try{
+      const rows=await dbAll('materials');
+      syncRows(rows,true);
+      if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
+    }catch{}
+  }
+
   seed();
-  window.LiRoPrice={version:107,verified:{...VERIFIED},parseSvNumber:sv,resolveByArt:byArt,resolveRow:rowPrice,readOverrides:read,writeOverrides:write};
+  if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
+  setTimeout(syncStoredRows,0);
+
+  window.LiRoPrice={version:111,verified:{...VERIFIED},parseSvNumber:sv,resolveByArt:byArt,resolveRow:rowPrice,readOverrides:read,writeOverrides:write,syncRows};
 
   window.effectivePrice=rowPrice;
   window.toNumber=(v,f=0)=>sv(v,f);
@@ -62,8 +93,15 @@
     const el=e.target;if(el?.dataset?.field!=='price-override')return;
     const a=art(el.dataset.artnr),n=sv(el.value,NaN);if(!a||!Number.isFinite(n)||n<=0)return;
     const o=read();o[a]=n;write(o);
+    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
+    storedSyncStarted=false;
+    setTimeout(syncStoredRows,0);
   },true);
 
   const render0=window.render;
-  if(typeof render0==='function') window.render=function(){seed();return render0.apply(this,arguments);};
+  if(typeof render0==='function') window.render=function(){
+    seed();
+    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
+    return render0.apply(this,arguments);
+  };
 })();
