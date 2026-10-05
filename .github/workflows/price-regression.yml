@@ -44,6 +44,8 @@ jobs:
             const markup=Number(markupPercent)||0;
             return {cost,markup,markupSum:cost*markup/100,total:cost*(1+markup/100),count:(rows||[]).length};
           };
+          global.jobMaterials=[{eNr:'0461543',qty:5,unitPrice:138}];
+          global.render=()=>true;
           vm.runInThisContext(fs.readFileSync('price-engine-v105.js','utf8'));
 
           const cases={
@@ -68,12 +70,15 @@ jobs:
           const expected=10*34.78+2*22.42;
           if(Math.abs(totals.cost-expected)>0.001) throw new Error(`Kalkyl använder fel pris: ${totals.cost} != ${expected}`);
 
+          render();
+          if(jobMaterials[0].unitPrice!==34.78) throw new Error('Befintligt projekt behåller gammalt listpris');
+
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v107'")) throw new Error('PWA-cache är inte uppdaterad till v107');
-          if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine saknas i PWA-cache');
+          if(!sw.includes("const CACHE = 'lirogo-v108'")) throw new Error('PWA-cache är inte uppdaterad till v108');
+          if(sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska hämtas färskt och får inte trigga lagerkontrollen i precache');
 
           const quick=fs.readFileSync('quickflow-v103.js','utf8');
           if(!quick.includes('price-engine-v105.js?v=105')) throw new Error('Prisengine laddas inte av appen');
 
-          console.log('Prisregression OK', {cases:Object.keys(cases).length, expectedCost:expected});
+          console.log('Prisregression OK', {cases:Object.keys(cases).length, expectedCost:expected, existingMaterial:jobMaterials[0].unitPrice});
           NODE
