@@ -45,7 +45,8 @@ jobs:
           global.indexedDB=undefined;
           vm.runInThisContext(fs.readFileSync('price-engine-v105.js','utf8'));
 
-          if(!global.LiRoPrice || LiRoPrice.version!==115) throw new Error('Prisengine är inte v115');
+          if(!global.LiRoPrice || LiRoPrice.version!==116) throw new Error('Prisengine är inte v116');
+          if(LiRoPrice.source!=='ahlsell-files-only') throw new Error('Prisengine är inte låst till Ahlsell-filerna');
 
           const agreementLine=({art='',cls='',discount=0,specific=0,net=0,chain=0}) =>
             '  '+'N'+'0000000'+String(art).padEnd(20,' ')+String(cls).padEnd(6,' ')+
@@ -76,24 +77,25 @@ jobs:
           if(result.prices['9999999']!==12.34) throw new Error('Explicit nettopris prioriteras inte: '+result.prices['9999999']);
           if(result.prices['8888888']!==45.67) throw new Error('0 % rabatt ska ge beräkningsgrund/GNP: '+result.prices['8888888']);
 
+          localStorage.setItem('lirogo_price_overrides',JSON.stringify({'7777777':999}));
           const unknown=effectivePrice(['7777777',138,'M','UNKNOWN']);
-          if(unknown!==null) throw new Error('Artikel som inte finns i importerad beräkningsgrund fick pris: '+unknown);
+          if(unknown!==null) throw new Error('Manuell prispatch får inte användas som Ahlsell-pris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v120'")) throw new Error('PWA-cache är inte uppdaterad till v120');
+          if(!sw.includes("const CACHE = 'lirogo-v121'")) throw new Error('PWA-cache är inte uppdaterad till v121');
           if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
           if(!source.includes('data-ahlsell-file="base"') || !source.includes('data-ahlsell-file="agreement"')) throw new Error('Ahlsell-importens filval saknas');
-          if(!source.includes('Kundavtalet laddas inte upp till GitHub')) throw new Error('Integritetsinformationen saknas');
-          if(source.includes('AHLSSELL_EXPLICIT') || source.includes("'2044120':42.82")) throw new Error('Kundspecifika priser får inte ligga hårdkodade i GitHub');
+          if(!source.includes('Filerna behandlas lokalt på denna enhet')) throw new Error('Integritetsinformationen saknas');
+          if(source.includes('MANUAL_KEY') || source.includes('AHLSSELL_EXPLICIT') || source.includes("'2044120':42.82")) throw new Error('Manuella eller hårdkodade kundpriser får inte finnas i prisengine');
 
           const quick=fs.readFileSync('quickflow-v103.js','utf8');
-          if(!quick.includes('price-engine-v105.js?v=115')) throw new Error('Quickflow laddar inte prisengine v115');
+          if(!quick.includes('price-engine-v105.js?v=115')) throw new Error('Quickflow ska fortfarande ladda prisfilen; queryversionen påverkar inte filinnehållet');
           if(quick.includes('_liroVerifiedPriceSourceV104') || quick.includes('lirogo_verified_net_prices_2026_10_05')) throw new Error('Legacy-prispatch finns kvar och kan blockera avtalspriser');
 
           const barcode=fs.readFileSync('barcode-v96.js','utf8');
           if(!barcode.includes('barcodeCandidatesV110') || !barcode.includes("compact.slice(0,-1)")) throw new Error('Streckkod 1500136E normaliseras inte till E-nummer');
 
-          console.log('Prisregression OK', {version:LiRoPrice.version,classPrice:result.prices['2044120'],halfEven1:result.prices['0445707'],halfEven2:result.prices['0030960'],explicit:result.prices['9999999'],zeroDiscount:result.prices['8888888']});
+          console.log('Prisregression OK', {version:LiRoPrice.version,source:LiRoPrice.source,classPrice:result.prices['2044120'],halfEven1:result.prices['0445707'],halfEven2:result.prices['0030960'],explicit:result.prices['9999999'],zeroDiscount:result.prices['8888888']});
           NODE
