@@ -6,6 +6,7 @@ on:
     paths:
       - 'price-engine-v105.js'
       - 'quickflow-v103.js'
+      - 'barcode-v96.js'
       - 'sw.js'
       - '.github/workflows/price-regression.yml'
   pull_request:
@@ -13,6 +14,7 @@ on:
     paths:
       - 'price-engine-v105.js'
       - 'quickflow-v103.js'
+      - 'barcode-v96.js'
       - 'sw.js'
       - '.github/workflows/price-regression.yml'
   workflow_dispatch:
@@ -25,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test canonical net prices and no list-price fallback
+      - name: Test canonical net prices and barcode normalization
         run: |
           node <<'NODE'
           const fs=require('fs');
@@ -37,6 +39,7 @@ jobs:
             setItem:(k,v)=>{store[k]=String(v)}
           };
           global.document={addEventListener(){}};
+          global.setTimeout=fn=>{ /* no async DB in unit test */ };
           global.alert=()=>{};
           global.fmtKr=n=>Math.round(Number(n)).toLocaleString('sv-SE')+' kr';
           global.calculateMaterialTotals=(rows,markupPercent)=>{
@@ -74,11 +77,14 @@ jobs:
           if(jobMaterials[0].unitPrice!==34.78) throw new Error('Befintligt projekt behåller gammalt listpris');
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v108'")) throw new Error('PWA-cache är inte uppdaterad till v108');
+          if(!sw.includes("const CACHE = 'lirogo-v111'")) throw new Error('PWA-cache är inte uppdaterad till v111');
           if(sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska hämtas färskt och får inte trigga lagerkontrollen i precache');
 
           const quick=fs.readFileSync('quickflow-v103.js','utf8');
-          if(!quick.includes('price-engine-v105.js?v=105')) throw new Error('Prisengine laddas inte av appen');
+          if(!quick.includes('price-engine-v105.js?v=111')) throw new Error('Prisengine v111 laddas inte av appen');
+
+          const barcode=fs.readFileSync('barcode-v96.js','utf8');
+          if(!barcode.includes('barcodeCandidatesV110') || !barcode.includes("compact.slice(0,-1)")) throw new Error('Streckkod 1500136E normaliseras inte till E-nummer');
 
           console.log('Prisregression OK', {cases:Object.keys(cases).length, expectedCost:expected, existingMaterial:jobMaterials[0].unitPrice});
           NODE
