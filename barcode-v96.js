@@ -1,5 +1,5 @@
-/* LiRo GO v96 – robust streckkodsläsare för Material.
-   Livekamera + foto-fallback + manuell kod. Ingen render mitt under aktiv kameraström. */
+/* LiRo GO v110 – robust streckkodsläsare för Material.
+   Livekamera + foto-fallback + manuell kod. Optimerad för Ahlsell/E-nummer på iPhone. */
 (function(){
   'use strict';
   if(window._liroBarcodeV96) return;
@@ -12,8 +12,8 @@
     .scanner96-shade{position:absolute;inset:0;background:linear-gradient(rgba(0,0,0,.35),transparent 22%,transparent 70%,rgba(0,0,0,.62));pointer-events:none}
     .scanner96-top{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:calc(14px + env(safe-area-inset-top,0px)) 16px 10px;color:#fff}
     .scanner96-title{font-size:16px;font-weight:700}
-    .scanner96-frame{position:absolute;z-index:2;left:12%;right:12%;top:34%;height:25%;border:2px solid rgba(255,255,255,.92);border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.10);pointer-events:none}
-    .scanner96-frame:before,.scanner96-frame:after{content:"";position:absolute;left:8%;right:8%;height:2px;background:var(--accent);top:50%;border-radius:2px}
+    .scanner96-frame{position:absolute;z-index:2;left:9%;right:9%;top:31%;height:30%;border:2px solid rgba(255,255,255,.92);border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.10);pointer-events:none}
+    .scanner96-frame:before,.scanner96-frame:after{content:"";position:absolute;left:7%;right:7%;height:2px;background:var(--accent);top:50%;border-radius:2px}
     .scanner96-bottom{position:relative;z-index:3;margin-top:auto;padding:16px 16px calc(18px + env(safe-area-inset-bottom,0px));color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.88) 24%)}
     .scanner96-msg{text-align:center;font-size:13px;line-height:1.4;margin:0 0 12px}
     .scanner96-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:520px;margin:0 auto}
@@ -30,13 +30,21 @@
   `;
   document.head.appendChild(style);
 
+  let detectBusyV96=false;
+  let lastDetectV110=0;
+  let scanNoV110=0;
+  const cropCanvasV110=document.createElement('canvas');
+
   function stopScannerV96(){
     try{ if(scannerFrame){cancelAnimationFrame(scannerFrame);scannerFrame=null;} }catch{}
     try{ if(scannerStream){scannerStream.getTracks().forEach(t=>t.stop());scannerStream=null;} }catch{}
+    detectBusyV96=false;
+    lastDetectV110=0;
+    scanNoV110=0;
   }
 
   function scannerFormatsV96(){
-    return ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code','data_matrix'];
+    return ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','code_93','codabar','itf','qr_code','data_matrix','pdf417'];
   }
 
   async function createDetectorV96(){
@@ -63,7 +71,7 @@
   function scannerMessageV96(){
     if(st.scannerLoading) return 'Startar kameran…';
     if(st.scannerError) return st.scannerError;
-    return 'Rikta streckkoden innanför ramen. Håll telefonen stilla en kort stund.';
+    return 'Rikta streckkoden innanför ramen. För E-nummer läser LiRo även koder som slutar på E.';
   }
 
   vBarcodeScanner=function(){
@@ -84,7 +92,7 @@
             <button class="scanner96-action" data-barcode-retry-v96="1">Starta om kamera</button>
           </div>
           <div class="scanner96-manual">
-            <input type="text" inputmode="numeric" placeholder="E-nummer / kod manuellt" data-barcode-manual-v96 autocomplete="off">
+            <input type="text" inputmode="text" autocapitalize="characters" placeholder="E-nummer / kod manuellt" data-barcode-manual-v96 autocomplete="off">
             <button class="scanner96-action primary" data-barcode-use-v96="1">Sök</button>
           </div>
           <input class="scanner96-file" type="file" accept="image/*" capture="environment" data-barcode-file-v96>
@@ -98,22 +106,64 @@
     if(el){el.textContent=text;el.style.color=isError?'#ffaaaa':'#fff';}
   }
 
-  function applyBarcodeV96(raw){
-    const code=String(raw||'').trim();
-    if(!code) return false;
-    st.matSearch=code;
-    st.scannerLastCodeV96=code;
-    try{
-      const hits=typeof searchCatalog==='function'?searchCatalog(code,5):[];
-      st.scannerMatchedV96=hits.length>0;
-    }catch{st.scannerMatchedV96=false;}
+  function barcodeCandidatesV110(raw){
+    const original=String(raw||'').trim().toUpperCase();
+    if(!original) return [];
+    const compact=original.replace(/[\s-]+/g,'');
+    const out=[original,compact];
+    // Ahlsell/E-nummer förekommer på etiketter som t.ex. 1500136E medan
+    // katalogens artikelnummer är 1500136.
+    if(/^\d{5,10}E$/.test(compact)) out.push(compact.slice(0,-1));
+    if(/^E\d{5,10}$/.test(compact)) out.push(compact.slice(1));
+    // Om en skanner lägger in start/slut-tecken från Code39.
+    const noStars=compact.replace(/^\*+|\*+$/g,'');
+    if(noStars!==compact) out.push(noStars);
+    if(/^\d{5,10}E$/.test(noStars)) out.push(noStars.slice(0,-1));
+    return [...new Set(out.filter(Boolean))];
+  }
+
+  async function resolveBarcodeV110(raw){
+    const candidates=barcodeCandidatesV110(raw);
+    try{ if(typeof ensureCatalog==='function') await ensureCatalog(); }catch{}
+    for(const code of candidates){
+      try{
+        const row=typeof catalogRow==='function'?catalogRow(code):null;
+        if(row) return {raw:String(raw||'').trim(),code,row,matched:true};
+      }catch{}
+    }
+    for(const code of candidates){
+      try{
+        const hits=typeof searchCatalog==='function'?searchCatalog(code,5):[];
+        if(hits?.length){
+          const row=hits[0];
+          return {raw:String(raw||'').trim(),code:row?.[0]||code,row,matched:true};
+        }
+      }catch{}
+    }
+    return {raw:String(raw||'').trim(),code:candidates[0]||String(raw||'').trim(),row:null,matched:false};
+  }
+
+  async function applyBarcodeV96(raw){
+    const resolved=await resolveBarcodeV110(raw);
+    if(!resolved.code) return false;
+    st.matSearch=resolved.code;
+    st.scannerLastCodeV96=resolved.raw;
+    st.scannerMatchedV96=resolved.matched;
     closeBarcodeScanner();
     setTimeout(()=>{
-      if(typeof flash==='function') flash(st.scannerMatchedV96?'Streckkod avläst – artikel hittad':'Kod avläst: '+code+' · ingen direkt träff i prislistan',3200);
+      if(typeof flash!=='function') return;
+      if(resolved.matched){
+        const changed=resolved.raw.toUpperCase()!==resolved.code.toUpperCase();
+        flash(changed?`Streckkod ${resolved.raw} → artikel ${resolved.code}`:'Streckkod avläst – artikel hittad',3200);
+      }else{
+        flash('Kod avläst: '+resolved.raw+' · ingen direkt träff i prislistan',3200);
+      }
     },80);
     return true;
   }
   window.applyBarcodeV96=applyBarcodeV96;
+  window.barcodeCandidatesV110=barcodeCandidatesV110;
+  window.resolveBarcodeV110=resolveBarcodeV110;
 
   async function decodeSourceV96(source){
     const detector=await createDetectorV96();
@@ -122,23 +172,34 @@
     return '';
   }
 
+  async function improveCameraFocusV110(stream){
+    try{
+      const track=stream.getVideoTracks?.()[0];
+      if(!track?.getCapabilities || !track?.applyConstraints) return;
+      const caps=track.getCapabilities();
+      const advanced={};
+      if(Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous')) advanced.focusMode='continuous';
+      if(Object.keys(advanced).length) await track.applyConstraints({advanced:[advanced]});
+    }catch{}
+  }
+
   async function startLiveV96(){
     stopScannerV96();
     st.scannerLoading=true;st.scannerError=null;
     setScannerMsgV96('Startar kameran…');
     try{
       if(!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('mediaDevices unavailable'),{name:'NotSupportedError'});
-      // Begär kameran först. Det ligger närmare användarens klick och fungerar stabilare i iOS/PWA.
       const stream=await navigator.mediaDevices.getUserMedia({
         video:{
           facingMode:{ideal:'environment'},
-          width:{ideal:1280},
-          height:{ideal:720}
+          width:{ideal:1920},
+          height:{ideal:1080}
         },
         audio:false
       });
       if(!st.scannerOpen){stream.getTracks().forEach(t=>t.stop());return;}
       scannerStream=stream;
+      await improveCameraFocusV110(stream);
       const video=document.getElementById('scannerVideo');
       if(!video) throw new Error('scanner-video-missing');
       video.srcObject=stream;
@@ -151,31 +212,47 @@
       await video.play().catch(()=>{});
       const detector=await createDetectorV96();
       st.scannerLoading=false;
-      setScannerMsgV96('Rikta streckkoden innanför ramen. Håll telefonen stilla en kort stund.');
+      setScannerMsgV96('Rikta streckkoden innanför ramen. LiRo söker automatiskt när koden blir skarp.');
       scanLoopV96(video,detector);
     }catch(err){
       const expectedPermissionError=err && ['NotAllowedError','SecurityError','NotFoundError','NotReadableError','NotSupportedError'].includes(err.name);
-      if(!expectedPermissionError) console.error('barcode v96 camera',err);
+      if(!expectedPermissionError) console.error('barcode v110 camera',err);
       st.scannerLoading=false;
       const msg=typeof cameraErrorText==='function'?cameraErrorText(err):'Kunde inte starta kameran.';
       setScannerMsgV96(msg+' Du kan använda “Ta bild” istället.',true);
     }
   }
 
-  let detectBusyV96=false;
+  async function detectFrameV110(video,detector){
+    const vw=video.videoWidth||0, vh=video.videoHeight||0;
+    if(vw<40||vh<40) return [];
+    // Läs först bara mitten där ramen ligger. Det ger betydligt färre pixlar
+    // till ZXing på iPhone och bättre träff på små materialetiketter.
+    const sx=Math.round(vw*0.07), sy=Math.round(vh*0.27);
+    const sw=Math.round(vw*0.86), sh=Math.round(vh*0.42);
+    cropCanvasV110.width=sw; cropCanvasV110.height=sh;
+    const ctx=cropCanvasV110.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(video,sx,sy,sw,sh,0,0,sw,sh);
+    let codes=await detector.detect(cropCanvasV110);
+    // Var sjätte läsning testar vi hela bilden också, för etiketter utanför ramen.
+    if((!codes||!codes.length) && (++scanNoV110%6===0)) codes=await detector.detect(video);
+    return codes||[];
+  }
+
   function scanLoopV96(video,detector){
-    const tick=async()=>{
+    const tick=async now=>{
       if(!st.scannerOpen) return;
       scannerFrame=requestAnimationFrame(tick);
       if(detectBusyV96||!video||video.readyState<2) return;
+      if(now-lastDetectV110<110) return;
+      lastDetectV110=now;
       detectBusyV96=true;
       try{
-        const codes=await detector.detect(video);
-        if(codes?.length&&codes[0]?.rawValue){ applyBarcodeV96(codes[0].rawValue); return; }
+        const codes=await detectFrameV110(video,detector);
+        if(codes?.length&&codes[0]?.rawValue){ await applyBarcodeV96(codes[0].rawValue); return; }
       }catch(err){
-        // Behåll videoelementet och kameraströmmen. Tidigare render() här rev bort videon.
         if(!st.scannerError){
-          console.error('barcode v96 detect',err);
+          console.error('barcode v110 detect',err);
           setScannerMsgV96('Kameran är igång men liveavläsningen strular. Prova “Ta bild av streckkod”.',true);
         }
       }finally{detectBusyV96=false;}
@@ -186,7 +263,6 @@
   openBarcodeScanner=async function(){
     st.scannerOpen=true;st.scannerLoading=true;st.scannerError=null;
     pushNav();render();
-    // Vänta ett ögonblick tills scanner-vyn finns; kamera startas fortfarande från samma användarflöde.
     await Promise.resolve();
     if(st.scannerOpen) startLiveV96();
   };
@@ -213,13 +289,13 @@
     if(use){
       e.preventDefault();e.stopImmediatePropagation();
       const input=document.querySelector('[data-barcode-manual-v96]');
-      if(!applyBarcodeV96(input?.value)) setScannerMsgV96('Skriv in en kod först.',true);
+      if(!await applyBarcodeV96(input?.value)) setScannerMsgV96('Skriv in en kod först.',true);
     }
   },true);
 
-  document.addEventListener('keydown',function(e){
+  document.addEventListener('keydown',async function(e){
     if(e.key==='Enter'&&e.target?.matches('[data-barcode-manual-v96]')){
-      e.preventDefault();applyBarcodeV96(e.target.value);
+      e.preventDefault();await applyBarcodeV96(e.target.value);
     }
   });
 
@@ -229,15 +305,14 @@
     setScannerMsgV96('Läser bilden…');
     try{
       const code=await decodeSourceV96(input.files[0]);
-      if(code) applyBarcodeV96(code);
+      if(code) await applyBarcodeV96(code);
       else setScannerMsgV96('Ingen streckkod hittades i bilden. Prova närmare och med bättre ljus.',true);
     }catch(err){
-      console.error('barcode v96 photo',err);
+      console.error('barcode v110 photo',err);
       setScannerMsgV96('Kunde inte läsa bilden. Prova igen eller skriv koden manuellt.',true);
     }finally{input.value='';}
   });
 
-  // Om en huvudmeny stänger scannern via nav-lagret ska kameran också alltid släppas.
   document.addEventListener('click',function(e){
     if(e.target.closest('.bottomnav [data-act]')&&st?.scannerOpen) stopScannerV96();
   },true);
