@@ -12,6 +12,7 @@
     .wiz-review-v103{width:100%;min-height:38px;text-align:center;font-size:13px;font-weight:700;color:var(--muted)}
     .work103-finish{margin-top:18px;width:100%;min-height:48px;border-radius:16px;background:var(--surface2);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
     .work103-finish svg{width:19px;height:19px;color:var(--accent)}
+    .ahlsell-import-v119{margin:10px 0 2px;min-height:42px}
   `;
   document.head.appendChild(style);
 
@@ -60,6 +61,20 @@
     };
   }
 
+  /* Gör Ahlsells filimport synlig direkt där material registreras. */
+  const oldMaterialPanel=window.vMaterialPanel;
+  if(typeof oldMaterialPanel==='function'){
+    window.vMaterialPanel=function(job){
+      let html=oldMaterialPanel(job);
+      const mode=st.matPanelMode||'browse';
+      if(mode!=='browse' || html.includes('data-v103="ahlsell-prices"')) return html;
+      const marker='<div class="mat-search">';
+      const button='<button type="button" class="primary-btn ahlsell-import-v119" data-v103="ahlsell-prices">Ahlsell-priser / importera filer</button>';
+      if(html.includes(marker)) html=html.replace(marker,button+marker);
+      return html;
+    };
+  }
+
   /* iOS/PWA-säkring: krysset på första steget får inte vara beroende av att
      history.back() alltid ger ett popstate-event. Försök normal historik först,
      men stäng direkt till startsidan om webbläsaren inte svarar. */
@@ -91,7 +106,17 @@
 
   document.addEventListener('click',function(e){
     const el=e.target.closest&&e.target.closest('[data-v103]');
-    if(!el||el.dataset.v103!=='finish') return;
+    if(!el) return;
+    if(el.dataset.v103==='ahlsell-prices'){
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      settingsOpen=true;
+      st.settingsTab='material';
+      if(typeof pushNav==='function') pushNav();
+      if(typeof render==='function') render();
+      return;
+    }
+    if(el.dataset.v103!=='finish') return;
     e.preventDefault();
     e.stopImmediatePropagation();
     st.view='job';
@@ -153,7 +178,7 @@
 
   async function run(){
     if(typeof DB==='undefined'||!DB||typeof dbAll!=='function'||typeof dbPut!=='function') return false;
-    const rows=await loadRows();
+    const rows=await loadRows('customers');
     const existing=await dbAll('customers');
     const now=new Date().toISOString();
     let added=0,enriched=0;
