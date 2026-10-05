@@ -1,37 +1,197 @@
-/* LiRo GO v114 – Ahlsell avtalspriser från lokala kundfiler.
-   Priser räknas på enheten från Ahlsells beräkningsgrund + kundens avtalsfil.
-   Kundspecifika avtal/priser lämnar aldrig enheten och läggs inte i GitHub. */
+/* LiRo GO v115 – Ahlsell avtalspris lokalt på enheten.
+   Kundens avtalsfil och beräkningsgrund läses endast i webbläsaren.
+   Inga kundspecifika priser eller rabatter lagras i GitHub. */
 (function(){
   'use strict';
 
-  const KEY='lirogo_price_overrides';
-  const META_KEY='lirogo_ahlsell_import_v114';
+  const MANUAL_KEY='lirogo_price_overrides';
+  const DB_NAME='lirogo-prices';
+  const DB_VERSION=1;
+  const STORE='data';
+  const PRICE_ID='ahlsell-net-v1';
+  const CONTRACT_ID='ahlsell-contract-v1';
+  const META_ID='ahlsell-meta-v1';
+
+  let contractPrices={};
+  let contract=null;
+  let meta={};
+  let loadStarted=false;
+
   const art=v=>String(v||'').trim().replace(/\s+/g,'');
   const sv=(v,f=0)=>{
     if(v===null||v===undefined||v==='') return f;
     const n=Number(String(v).replace(/\s/g,'').replace(',','.'));
     return Number.isFinite(n)?n:f;
   };
-  const readStored=()=>{
-    try{return JSON.parse(localStorage.getItem(KEY)||'{}')||{};}
+  const intField=(s,a,b)=>{
+    const v=String(s||'').slice(a,b).trim();
+    return /^\d+$/.test(v)?Number(v):0;
+  };
+  const manual=()=>{
+    try{return JSON.parse(localStorage.getItem(MANUAL_KEY)||'{}')||{};}
     catch{return {};}
   };
-  let priceMap=readStored();
 
-  function writeStored(o){
-    priceMap=o||{};
-    localStorage.setItem(KEY,JSON.stringify(priceMap));
+  function openPriceDb(){
+    return new Promise((resolve,reject)=>{
+      if(typeof indexedDB==='undefined') return reject(new Error('IndexedDB saknas'));
+      const req=indexedDB.open(DB_NAME,DB_VERSION);
+      req.onupgradeneeded=()=>{
+        const db=req.result;
+        if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE,{keyPath:'id'});
+      };
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error('Kunde inte öppna prisdatabasen'));
+    });
   }
+  async function dbGet(id){
+    const db=await openPriceDb();
+    try{
+      return await new Promise((resolve,reject)=>{
+        const tx=db.transaction(STORE,'readonly');
+        const req=tx.objectStore(STORE).get(id);
+        req.onsuccess=()=>resolve(req.result?.value??null);
+        req.onerror=()=>reject(req.error);
+      });
+    } finally { db.close(); }
+  }
+  async function dbSet(id,value){
+    const db=await openPriceDb();
+    try{
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction(STORE,'readwrite');
+        tx.objectStore(STORE).put({id,value});
+        tx.oncomplete=resolve;
+        tx.onerror=()=>reject(tx.error);
+        tx.onabort=()=>reject(tx.error||new Error('Prislagring avbröts'));
+      });
+    } finally { db.close(); }
+  }
+
+  function parseAgreement(text){
+    const classes={};
+    const articles={};
+    let classCount=0,articleCount=0;
+    for(const raw of String(text||'').split(/\r?\n/)){
+      if(!raw.trim() || raw.length<57) continue;
+      const a=art(raw.slice(10,30));
+      const cls=raw.slice(30,36).trim();
+      const rabatt=intField(raw,36,40);
+      const specific=intField(raw,40,44);
+      const net=intField(raw,44,53);
+      const chain=intField(raw,53,57);
+
+      if(cls){
+        classes[cls]={rabatt,specific,net,chain};
+        classCount++;
+      }else if(a && (net>0 || specific>0 || chain>0 || rabatt>0) && /^[0-9A-Za-zÄÖÅäöå-]+$/.test(a)){
+        articles[a]={rabatt,specific,net,chain};
+        articleCount++;
+      }
+    }
+    return {classes,articles,classCount,articleCount};
+  }
+
+  function discountPrice(gnpCents,perMille){
+    if(!(gnpCents>0)) return 0;
+    const d=Math.max(0,Math.min(1000,Number(perMille)||0));
+    return Math.round(gnpCents*(1000-d)/1000);
+  }
+
+  function priceForBaseRow(a,gnpCents,cls,agreement){
+    const rule=agreement?.articles?.[a];
+    if(rule?.net>0) return rule.net;
+    if(rule?.specific>0) return discountPrice(gnpCents,rule.specific);
+    if(rule?.chain>0) return discountPrice(gnpCents,rule.chain);
+    if(rule?.rabatt>0) return discountPrice(gnpCents,rule.rabatt);
+
+    const cr=agreement?.classes?.[cls];
+    if(!cr || !(gnpCents>0)) return 0;
+    if(cr.net>0) return cr.net;
+    if(cr.specific>0) return discountPrice(gnpCents,cr.specific);
+    if(cr.chain>0) return discountPrice(gnpCents,cr.chain);
+    return discountPrice(gnpCents,cr.rabatt);
+  }
+
+  function calculateFromBase(text,agreement){
+    const prices={};
+    let rows=0,priced=0,missingBase=0,missingClass=0;
+    for(const raw of String(text||'').split(/\r?\n/)){
+      if(!raw.trim() || raw.length<38) continue;
+      const a=art(raw.slice(0,20));
+      if(!a) continue;
+      rows++;
+      const gnp=intField(raw,20,32);
+      const cls=raw.slice(32,38).trim();
+      const cents=priceForBaseRow(a,gnp,cls,agreement);
+      if(cents>0){
+        prices[a]=cents/100;
+        priced++;
+      }else{
+        if(!(gnp>0)) missingBase++;
+        else if(!agreement?.classes?.[cls] && !agreement?.articles?.[a]) missingClass++;
+      }
+    }
+    return {prices,rows,priced,missingBase,missingClass};
+  }
+
+  async function readFileText(file){
+    if(!file) throw new Error('Ingen fil vald');
+    const buf=await file.arrayBuffer();
+    try{return new TextDecoder('windows-1252').decode(buf);}
+    catch{return new TextDecoder().decode(buf);}
+  }
+
+  async function importAgreementFile(file){
+    const parsed=parseAgreement(await readFileText(file));
+    if(parsed.classCount<100) throw new Error('Filen ser inte ut som en Ahlsell-avtalsfil');
+    contract=parsed;
+    await dbSet(CONTRACT_ID,parsed);
+    meta={...meta,agreementName:file.name,agreementImported:new Date().toISOString(),
+      classCount:parsed.classCount,articleCount:parsed.articleCount};
+    await dbSet(META_ID,meta);
+    return parsed;
+  }
+
+  async function importBaseFile(file){
+    if(!contract) contract=await dbGet(CONTRACT_ID);
+    if(!contract) throw new Error('Importera avtalsfilen först');
+    const result=calculateFromBase(await readFileText(file),contract);
+    if(result.rows<1000 || result.priced<1000) throw new Error('Filen ser inte ut som Ahlsells El-beräkningsgrund');
+    contractPrices=result.prices;
+    await dbSet(PRICE_ID,contractPrices);
+    meta={...meta,baseName:file.name,baseImported:new Date().toISOString(),
+      baseRows:result.rows,priced:result.priced,missingBase:result.missingBase,missingClass:result.missingClass};
+    await dbSet(META_ID,meta);
+    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
+    try{if(typeof render==='function') render();}catch{}
+    return result;
+  }
+
+  async function loadPersisted(){
+    if(loadStarted) return;
+    loadStarted=true;
+    try{
+      const [p,c,m]=await Promise.all([dbGet(PRICE_ID),dbGet(CONTRACT_ID),dbGet(META_ID)]);
+      if(p&&typeof p==='object') contractPrices=p;
+      if(c&&typeof c==='object') contract=c;
+      if(m&&typeof m==='object') meta=m;
+      if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
+      try{if(typeof render==='function') render();}catch{}
+    }catch(err){
+      console.warn('Kunde inte läsa lokala Ahlsell-priser',err);
+    }
+  }
+
   function byArt(a){
-    const n=sv(priceMap[art(a)],NaN);
-    return Number.isFinite(n)&&n>0?n:null;
+    const key=art(a);
+    const cp=Number(contractPrices[key]);
+    if(Number.isFinite(cp)&&cp>0) return cp;
+    const mp=Number(manual()[key]);
+    return Number.isFinite(mp)&&mp>0?mp:null;
   }
-  function rowPrice(row){ return row&&row[0]?byArt(row[0]):null; }
-  function unitPrice(m){
-    if(!m)return 0;
-    if(m.eNr)return byArt(m.eNr)||0;
-    return Math.max(0,sv(m.unitPrice,0));
-  }
+  function rowPrice(row){return row&&row[0]?byArt(row[0]):null;}
+  function unitPrice(m){if(!m)return 0;if(m.eNr)return byArt(m.eNr)||0;return Math.max(0,sv(m.unitPrice,0));}
 
   function syncRows(rows,persist=false){
     let changed=0;
@@ -42,262 +202,136 @@
       m.unitPrice=p;
       m.priceMissing=false;
       changed++;
-      if(persist && m.id && typeof dbPut==='function'){
-        Promise.resolve(dbPut('materials',m)).catch(()=>{});
-      }
+      if(persist && m.id && typeof dbPut==='function') Promise.resolve(dbPut('materials',m)).catch(()=>{});
     }
     return changed;
   }
 
-  let storedSyncStarted=false;
-  async function syncStoredRows(){
-    if(storedSyncStarted || typeof dbAll!=='function') return;
-    storedSyncStarted=true;
-    try{
-      const rows=await dbAll('materials');
-      syncRows(rows,true);
-      if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
-    }catch{}
-  }
-
-  // Ahlsell fixed-width avtalsfil:
-  // artikel 11–30, materialklass 31–36, rabatt 37–40,
-  // specifik artikelrabatt 41–44, nettopris 45–53.
-  function parseAgreement(text){
-    const classDiscount=new Map();
-    const articleDiscount=new Map();
-    const explicitNet=new Map();
-
-    for(const raw of String(text||'').split(/\r?\n/)){
-      if(raw.length<57) continue;
-      const a=raw.slice(10,30).trim();
-      const cls=raw.slice(30,36).trim();
-      const discount=parseInt(raw.slice(36,40),10)||0;
-      const specific=parseInt(raw.slice(40,44),10)||0;
-      const net=parseInt(raw.slice(44,53),10)||0;
-
-      if(a){
-        if(net>0) explicitNet.set(a,net);             // redan i öre
-        else if(specific>0) articleDiscount.set(a,specific); // tiondels %
-      }else if(cls && discount>=0){
-        classDiscount.set(cls,discount);             // tiondels %
-      }
-    }
-    return {classDiscount,articleDiscount,explicitNet};
-  }
-
-  // Ahlsell beräkningsgrund:
-  // artikel 1–20, GNP 21–32 (öre), materialklass 33–38.
-  function calculateFromBase(text,agreement){
-    const result={};
-    let rows=0,calculated=0,missingAgreement=0;
-
-    for(const raw of String(text||'').split(/\r?\n/)){
-      if(raw.length<38) continue;
-      const a=raw.slice(0,20).trim();
-      const gnpText=raw.slice(20,32).trim();
-      const cls=raw.slice(32,38).trim();
-      if(!a || !/^\d+$/.test(gnpText)) continue;
-
-      rows++;
-      const gnpCents=parseInt(gnpText,10);
-      let cents=null;
-
-      if(agreement.explicitNet.has(a)){
-        cents=agreement.explicitNet.get(a);
-      }else if(agreement.articleDiscount.has(a)){
-        const d=agreement.articleDiscount.get(a);
-        cents=Math.floor((gnpCents*(1000-d)+500)/1000);
-      }else if(agreement.classDiscount.has(cls)){
-        const d=agreement.classDiscount.get(cls);
-        cents=Math.floor((gnpCents*(1000-d)+500)/1000);
-      }else{
-        missingAgreement++;
-      }
-
-      if(Number.isFinite(cents) && cents>0){
-        result[a]=cents/100;
-        calculated++;
-      }
-    }
-    return {prices:result,rows,calculated,missingAgreement};
-  }
-
-  const decodeFile=async file=>{
-    const buf=await file.arrayBuffer();
-    // Ahlsell-filerna är ANSI/Windows-1252. Prisfält och nycklar är ASCII,
-    // men rätt decoder bevarar även filens svenska text om den används senare.
-    try{return new TextDecoder('windows-1252').decode(buf);}
-    catch{return new TextDecoder('iso-8859-1').decode(buf);}
-  };
-
-  let baseFile=null,agreementFile=null,busy=false;
-
-  async function importIfReady(){
-    if(busy||!baseFile||!agreementFile) return;
-    busy=true;
-    setImportStatus('Läser och räknar priser…');
-    try{
-      const [baseText,agreementText]=await Promise.all([decodeFile(baseFile),decodeFile(agreementFile)]);
-      const agreement=parseAgreement(agreementText);
-      const calc=calculateFromBase(baseText,agreement);
-
-      if(calc.calculated<1000) throw new Error('För få priser kunde beräknas. Kontrollera att rätt filer valts.');
-
-      // Automatpriser ska ersätta gamla/stale seedade priser.
-      // Manuella poster som inte finns i den nya elfilen bevaras.
-      const old=readStored();
-      const merged={...old,...calc.prices};
-      writeStored(merged);
-
-      const checks={
-        '2044120':42.82,'2049109':74.84,'2047708':70.15,'2047760':76.47,'2045213':84.59
-      };
-      const failed=Object.entries(checks).filter(([a,p])=>calc.prices[a]!==p);
-      if(failed.length) throw new Error('Kontrollpriserna stämmer inte: '+failed.map(x=>x[0]).join(', '));
-
-      const meta={
-        importedAt:new Date().toISOString(),
-        baseFile:baseFile.name,
-        agreementFile:agreementFile.name,
-        rows:calc.rows,
-        prices:calc.calculated,
-        missingAgreement:calc.missingAgreement,
-        verifiedChecks:Object.keys(checks).length
-      };
-      localStorage.setItem(META_KEY,JSON.stringify(meta));
-
-      storedSyncStarted=false;
-      await syncStoredRows();
-      if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
-
-      setImportStatus(`Klart: ${calc.calculated.toLocaleString('sv-SE')} priser. 5/5 kontrollpriser rätt.`);
-      if(typeof flash==='function') flash('Ahlsell-priser uppdaterade');
-      if(typeof render==='function') render();
-    }catch(err){
-      console.error('Ahlsell prisimport misslyckades',err);
-      setImportStatus('Import misslyckades: '+(err?.message||err));
-      alert('Kunde inte uppdatera Ahlsell-priserna. '+(err?.message||'Kontrollera filerna.'));
-    }finally{
-      busy=false;
-      baseFile=null;
-      agreementFile=null;
-    }
-  }
-
-  function readMeta(){
-    try{return JSON.parse(localStorage.getItem(META_KEY)||'null');}
-    catch{return null;}
-  }
-  function statusText(){
-    const m=readMeta();
-    if(!m) return 'Ingen komplett Ahlsell-import gjord ännu.';
-    const d=new Date(m.importedAt);
-    const when=Number.isNaN(d.getTime())?m.importedAt:d.toLocaleString('sv-SE');
-    return `${Number(m.prices||0).toLocaleString('sv-SE')} priser · ${when}`;
-  }
-  function setImportStatus(text){
-    const el=document.querySelector('[data-ahlsell-import-status]');
-    if(el) el.textContent=text;
-  }
-  function importCard(){
-    return `<div class="card" style="margin-top:12px">
+  function statusHtml(){
+    const hasAgreement=!!contract;
+    const hasPrices=Object.keys(contractPrices).length>0;
+    const agreementText=hasAgreement
+      ? `Avtal: ${Number(meta.classCount||contract.classCount||0).toLocaleString('sv-SE')} rabattgrupper`
+      : 'Avtalsfil saknas';
+    const priceText=hasPrices
+      ? `El-priser: ${Number(meta.priced||Object.keys(contractPrices).length).toLocaleString('sv-SE')} artiklar`
+      : 'El-beräkningsgrund saknas';
+    return `<div class="card" style="margin-bottom:16px">
       <div class="bold">Ahlsell avtalspriser</div>
-      <div class="muted" style="font-size:12px;line-height:1.45;margin-top:5px" data-ahlsell-import-status>${statusText()}</div>
-      <div class="muted" style="font-size:12px;line-height:1.45;margin-top:8px">
-        Filerna behandlas bara på denna enhet. Kundavtalet laddas inte upp till GitHub.
+      <div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">
+        ${agreementText}<br>${priceText}<br>
+        Filerna behandlas lokalt på denna enhet. Kundavtalet laddas inte upp till GitHub.
       </div>
-      <label class="primary-btn" style="margin-top:12px;cursor:pointer">
-        Välj El.txt
-        <input type="file" accept=".txt,text/plain" data-ahlsell-file="base" style="display:none">
-      </label>
-      <label class="primary-btn" style="margin-top:8px;cursor:pointer">
-        Välj avtalsfil
-        <input type="file" accept=".txt,text/plain" data-ahlsell-file="agreement" style="display:none">
-      </label>
-      <div class="muted" style="font-size:11px;margin-top:8px">
-        Välj båda filerna. Därefter räknas priserna automatiskt enligt Ahlsells prioritering.
+      <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px">
+        <label class="primary-btn" style="cursor:pointer">
+          Välj avtalsfil
+          <input type="file" accept=".txt,text/plain" data-ahlsell-file="agreement" style="display:none">
+        </label>
+        <label class="primary-btn" style="cursor:pointer;background:var(--surface2)">
+          Välj El.txt
+          <input type="file" accept=".txt,text/plain" data-ahlsell-file="base" style="display:none">
+        </label>
       </div>
     </div>`;
   }
 
-  // Lägg importen i materialinställningarna utan att röra kärnfilen.
-  const settings0=window.vSettingsMaterial;
-  if(typeof settings0==='function'){
+  const oldSettings=window.vSettingsMaterial;
+  if(typeof oldSettings==='function'){
     window.vSettingsMaterial=function(){
-      return settings0.apply(this,arguments)+importCard();
+      return statusHtml()+oldSettings.apply(this,arguments);
     };
   }
 
-  document.addEventListener('change',e=>{
+  document.addEventListener('change',async e=>{
     const el=e.target;
     const kind=el?.dataset?.ahlsellFile;
-    if(!kind||!el.files?.[0]) return;
-    if(kind==='base') baseFile=el.files[0];
-    if(kind==='agreement') agreementFile=el.files[0];
-    setImportStatus(baseFile&&agreementFile?'Båda filer valda. Startar…':`${el.files[0].name} vald. Välj den andra filen.`);
-    importIfReady();
+    if(!kind) return;
+    const file=el.files&&el.files[0];
+    if(!file) return;
+    try{
+      if(typeof flash==='function') flash(kind==='agreement'?'Läser avtalsfil…':'Beräknar Ahlsell-priser…');
+      if(kind==='agreement'){
+        const r=await importAgreementFile(file);
+        if(typeof flash==='function') flash(`Avtalsfil klar: ${r.classCount.toLocaleString('sv-SE')} rabattgrupper`);
+      }else{
+        const r=await importBaseFile(file);
+        if(typeof flash==='function') flash(`Priser klara: ${r.priced.toLocaleString('sv-SE')} artiklar`);
+      }
+      try{if(typeof render==='function') render();}catch{}
+    }catch(err){
+      console.error(err);
+      alert(err?.message||'Importen misslyckades');
+    }finally{
+      try{el.value='';}catch{}
+    }
   },true);
 
-  if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
-  setTimeout(syncStoredRows,0);
+  // Kompatibilitet med äldre v104-klickskydd i quickflow:
+  // lägg bara den klickade artikelns aktuella avtalspris i den lilla legacy-mappen
+  // innan eventet når document-listenern. Hela prislistan ligger fortsatt i IndexedDB.
+  if(typeof window.addEventListener==='function') window.addEventListener('click',e=>{
+    const b=e.target?.closest?.('[data-act]');
+    if(!b || b.dataset.act!=='bump-qty' || !(Number(b.dataset.delta)>0)) return;
+    const a=art(b.dataset.artnr);
+    const p=byArt(a);
+    if(p==null) return;
+    try{
+      const o=manual();
+      if(Number(o[a])!==p){
+        o[a]=p;
+        localStorage.setItem(MANUAL_KEY,JSON.stringify(o));
+      }
+    }catch{}
+  },true);
 
   window.LiRoPrice={
-    version:114,
+    version:115,
     parseSvNumber:sv,
-    resolveByArt:byArt,
-    resolveRow:rowPrice,
-    readOverrides:()=>({...priceMap}),
-    writeOverrides:writeStored,
-    syncRows,
     parseAgreement,
     calculateFromBase,
-    getImportMeta:readMeta
+    priceForBaseRow,
+    resolveByArt:byArt,
+    resolveRow:rowPrice,
+    syncRows,
+    importAgreementFile,
+    importBaseFile,
+    getMeta:()=>({...meta}),
+    contractCount:()=>Object.keys(contractPrices).length
   };
 
   window.effectivePrice=rowPrice;
   window.toNumber=(v,f=0)=>sv(v,f);
 
-  const calc0=window.calculateMaterialTotals;
-  if(typeof calc0==='function') window.calculateMaterialTotals=function(rows,markup){
+  const calc=window.calculateMaterialTotals;
+  if(typeof calc==='function') window.calculateMaterialTotals=function(rows,markup){
     const input=Array.isArray(rows)?rows:[];
-    return calc0(input.map(m=>({...m,qty:Math.max(0,sv(m.qty,0)),unitPrice:unitPrice(m)})),markup);
+    return calc(input.map(m=>({...m,qty:Math.max(0,sv(m.qty,0)),unitPrice:unitPrice(m)})),markup);
   };
 
-  const add0=window.addMaterial;
-  if(typeof add0==='function') window.addMaterial=function(jobId,input){
+  const add=window.addMaterial;
+  if(typeof add==='function') window.addMaterial=function(jobId,input){
     const x={...(input||{})};
     x.qty=Math.max(0,sv(x.qty,0));
     x.unitPrice=x.eNr?(byArt(x.eNr)||0):Math.max(0,sv(x.unitPrice,0));
     if(x.eNr)x.priceMissing=byArt(x.eNr)==null;
-    return add0(jobId,x);
+    return add(jobId,x);
   };
 
-  const bump0=window.bumpMaterialQty;
-  if(typeof bump0==='function') window.bumpMaterialQty=function(jobId,row,delta,kind){
+  const bump=window.bumpMaterialQty;
+  if(typeof bump==='function') window.bumpMaterialQty=function(jobId,row,delta,kind){
     const d=sv(delta,0);
     if(d>0&&row?.[0]&&rowPrice(row)==null){
-      alert('Pris saknas för artikeln. Importera Ahlsells El.txt och din avtalsfil under materialinställningarna.');
+      alert('Pris saknas för artikeln. Importera Ahlsell-filerna under materialinställningar.');
       return Promise.resolve(0);
     }
-    return bump0(jobId,row,d,kind);
+    return bump(jobId,row,d,kind);
   };
-
-  document.addEventListener('change',e=>{
-    const el=e.target;
-    if(el?.dataset?.field!=='price-override') return;
-    const a=art(el.dataset.artnr),n=sv(el.value,NaN);
-    if(!a||!Number.isFinite(n)||n<=0)return;
-    priceMap[a]=n;
-    try{writeStored(priceMap);}catch(err){console.error('Kunde inte spara manuellt pris',err);}
-    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
-    storedSyncStarted=false;
-    setTimeout(syncStoredRows,0);
-  },true);
 
   const render0=window.render;
   if(typeof render0==='function') window.render=function(){
     if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
     return render0.apply(this,arguments);
   };
+
+  setTimeout(loadPersisted,0);
 })();
