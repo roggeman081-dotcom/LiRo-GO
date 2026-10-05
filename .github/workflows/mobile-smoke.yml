@@ -252,6 +252,10 @@ jobs:
             await workNext.click();
 
             await page.locator('[data-field="title"]').fill('Smoke Test Uppdrag');
+            await page.waitForFunction(() => {
+              const button=document.querySelector('.wiz-footer [data-act="wiz-next"]');
+              return draft.title==='Smoke Test Uppdrag' && button && !button.disabled;
+            }, null, {timeout:5000});
             await page.locator('.wiz-footer [data-act="wiz-next"]').click();
 
             const summary = await page.locator('body').innerText();
@@ -371,7 +375,6 @@ jobs:
               return {start:f(events[0].start),end:f(events[0].end)};
             });
             if (parsedTz.start!=='06:45' || parsedTz.end!=='15:15') throw new Error('Outlook TZID tolkades fel: '+JSON.stringify(parsedTz));
-
 
             // v92: Hem i bottenmenyn ska stänga Inställningar direkt.
             await page.evaluate(() => {
