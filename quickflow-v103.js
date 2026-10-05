@@ -30,6 +30,24 @@
     };
   }
 
+  // Kärnappens patchWizFooter uppdaterar bara .primary-btn. I snabbflödet finns
+  // även granskningsknappen, så spegla samma enabled/disabled-läge dit efter
+  // varje fältändring. Annars kan "Granska allt först" förbli låst efter att
+  // titeln har fyllts i trots att detailsMissing() är tom.
+  const oldPatchWizFooter=window.patchWizFooter;
+  if(typeof oldPatchWizFooter==='function'){
+    window.patchWizFooter=function(){
+      oldPatchWizFooter();
+      if(st.step!==3) return;
+      const footer=$app.querySelector('.wiz-footer-v103');
+      const primary=footer&&footer.querySelector('.primary-btn');
+      const review=footer&&footer.querySelector('.wiz-review-v103');
+      if(!primary||!review) return;
+      if(primary.disabled) review.setAttribute('disabled','');
+      else review.removeAttribute('disabled');
+    };
+  }
+
   const oldWork=window.vArbetslage;
   if(typeof oldWork==='function'){
     window.vArbetslage=function(job){
