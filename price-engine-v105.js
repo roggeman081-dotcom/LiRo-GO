@@ -92,10 +92,21 @@
     return {classes,articles,classCount,articleCount};
   }
 
+  // Ahlsells beräknade nettopriser följer decimalavrundning till helt öre.
+  // Vid exakt x,5 öre används half-even (banker's rounding), vilket matchar
+  // verifierade avtalspriser som 97,50 × 23 % = 22,42 och 92,50 × 31,4 % = 29,04.
+  function roundHalfEven(n){
+    const lo=Math.floor(n);
+    const frac=n-lo;
+    const eps=1e-9;
+    if(frac<0.5-eps) return lo;
+    if(frac>0.5+eps) return lo+1;
+    return lo%2===0?lo:lo+1;
+  }
   function discountPrice(gnpCents,perMille){
     if(!(gnpCents>0)) return 0;
     const d=Math.max(0,Math.min(1000,Number(perMille)||0));
-    return Math.round(gnpCents*(1000-d)/1000);
+    return roundHalfEven(gnpCents*(1000-d)/1000);
   }
 
   function priceForBaseRow(a,gnpCents,cls,agreement){
