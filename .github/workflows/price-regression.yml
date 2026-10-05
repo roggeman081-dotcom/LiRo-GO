@@ -1,0 +1,79 @@
+name: Material price regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'price-engine-v105.js'
+      - 'quickflow-v103.js'
+      - 'sw.js'
+      - '.github/workflows/price-regression.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'price-engine-v105.js'
+      - 'quickflow-v103.js'
+      - 'sw.js'
+      - '.github/workflows/price-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  price-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test canonical net prices and no list-price fallback
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const vm=require('vm');
+          const store={};
+          global.window=global;
+          global.localStorage={
+            getItem:k=>Object.prototype.hasOwnProperty.call(store,k)?store[k]:null,
+            setItem:(k,v)=>{store[k]=String(v)}
+          };
+          global.document={addEventListener(){}};
+          global.alert=()=>{};
+          global.fmtKr=n=>Math.round(Number(n)).toLocaleString('sv-SE')+' kr';
+          global.calculateMaterialTotals=(rows,markupPercent)=>{
+            const cost=(rows||[]).reduce((s,m)=>s+(Number(m.qty)||0)*(Number(m.unitPrice)||0),0);
+            const markup=Number(markupPercent)||0;
+            return {cost,markup,markupSum:cost*markup/100,total:cost*(1+markup/100),count:(rows||[]).length};
+          };
+          vm.runInThisContext(fs.readFileSync('price-engine-v105.js','utf8'));
+
+          const cases={
+            '0445707':22.42,
+            '1500136':64.07,
+            '1377701':385.70,
+            '1820444':93.61,
+            '0461543':34.78
+          };
+          for(const [art,expected] of Object.entries(cases)){
+            const got=effectivePrice([art,999999,'M','TEST']);
+            if(got!==expected) throw new Error(`${art}: väntade ${expected}, fick ${got}`);
+          }
+
+          const unknown=effectivePrice(['9999999',138,'M','UNKNOWN']);
+          if(unknown!==null) throw new Error('Okänd artikel föll tillbaka till katalog/listpris: '+unknown);
+
+          const totals=calculateMaterialTotals([
+            {eNr:'0461543',qty:10,unitPrice:138},
+            {eNr:'0445707',qty:2,unitPrice:999}
+          ],0);
+          const expected=10*34.78+2*22.42;
+          if(Math.abs(totals.cost-expected)>0.001) throw new Error(`Kalkyl använder fel pris: ${totals.cost} != ${expected}`);
+
+          const sw=fs.readFileSync('sw.js','utf8');
+          if(!sw.includes("const CACHE = 'lirogo-v107'")) throw new Error('PWA-cache är inte uppdaterad till v107');
+          if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine saknas i PWA-cache');
+
+          const quick=fs.readFileSync('quickflow-v103.js','utf8');
+          if(!quick.includes('price-engine-v105.js?v=105')) throw new Error('Prisengine laddas inte av appen');
+
+          console.log('Prisregression OK', {cases:Object.keys(cases).length, expectedCost:expected});
+          NODE
