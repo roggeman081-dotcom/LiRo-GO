@@ -42,6 +42,7 @@ jobs:
           global.setTimeout=()=>{};
           global.alert=()=>{};
           global.render=()=>true;
+          global.indexedDB=undefined;
           vm.runInThisContext(fs.readFileSync('price-engine-v105.js','utf8'));
 
           if(!global.LiRoPrice || LiRoPrice.version!==115) throw new Error('Prisengine är inte v115');
@@ -71,13 +72,17 @@ jobs:
           if(unknown!==null) throw new Error('Okänd artikel föll tillbaka till katalog/listpris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v115'")) throw new Error('PWA-cache är inte uppdaterad till v115');
+          if(!sw.includes("const CACHE = 'lirogo-v116'")) throw new Error('PWA-cache är inte uppdaterad till v116');
           if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
           if(!source.includes('data-ahlsell-file="base"') || !source.includes('data-ahlsell-file="agreement"')) throw new Error('Ahlsell-importens filval saknas');
           if(!source.includes('Kundavtalet laddas inte upp till GitHub')) throw new Error('Integritetsinformationen saknas');
           if(source.includes('AHLSSELL_EXPLICIT') || source.includes("'2044120':42.82")) throw new Error('Kundspecifika priser får inte ligga hårdkodade i GitHub');
+
+          const quick=fs.readFileSync('quickflow-v103.js','utf8');
+          if(!quick.includes('price-engine-v105.js?v=115')) throw new Error('Quickflow laddar inte prisengine v115');
+          if(quick.includes('_liroVerifiedPriceSourceV104') || quick.includes('lirogo_verified_net_prices_2026_10_05')) throw new Error('Legacy-prispatch finns kvar och kan blockera avtalspriser');
 
           const barcode=fs.readFileSync('barcode-v96.js','utf8');
           if(!barcode.includes('barcodeCandidatesV110') || !barcode.includes("compact.slice(0,-1)")) throw new Error('Streckkod 1500136E normaliseras inte till E-nummer');
