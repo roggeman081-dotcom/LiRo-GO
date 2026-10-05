@@ -1,4 +1,4 @@
-/* LiRo GO v112 – global materialpris- och decimalhantering.
+/* LiRo GO v113 – global materialpris- och decimalhantering.
    Ahlsell avtalsfil: NETTOPRIS är byte 45–53 och anges i ören.
    Explicita artikelrader nedan är importerade direkt från avtalsfilen 2026-10-05.
    Katalog-/GNP-pris får aldrig användas som inköpspris. */
@@ -16,7 +16,8 @@
   const VERIFIED={
     ...AHLSSELL_EXPLICIT,
     '0445707':22.42,'1500136':64.07,'1377701':385.70,'1820444':93.61,'0461543':34.78,
-    '1418102':24.05,'0030960':29.04,'0445721E':28.75,'1377703':469.80,'0437372':4.97,'1414471':13.44
+    '1418102':24.05,'0030960':29.04,'0445721E':28.75,'1377703':469.80,'0437372':4.97,'1414471':13.44,
+    '2044120':42.82,'2049109':74.84,'2047708':70.15,'2047760':76.47,'2045213':84.59
   };
 
   const art=v=>String(v||'').trim().replace(/\s+/g,'');
@@ -59,7 +60,7 @@
   if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
   setTimeout(syncStoredRows,0);
 
-  window.LiRoPrice={version:112,verified:{...VERIFIED},explicitAhlsell:{...AHLSSELL_EXPLICIT},parseSvNumber:sv,resolveByArt:byArt,resolveRow:rowPrice,readOverrides:read,writeOverrides:write,syncRows};
+  window.LiRoPrice={version:113,verified:{...VERIFIED},explicitAhlsell:{...AHLSSELL_EXPLICIT},parseSvNumber:sv,resolveByArt:byArt,resolveRow:rowPrice,readOverrides:read,writeOverrides:write,syncRows};
 
   window.effectivePrice=rowPrice;
   window.toNumber=(v,f=0)=>sv(v,f);
