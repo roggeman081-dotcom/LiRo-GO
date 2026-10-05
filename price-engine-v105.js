@@ -1,4 +1,4 @@
-/* LiRo GO v116 – Ahlsell avtalspris strikt från kundens två filer.
+/* LiRo GO v117 – Ahlsell avtalspris strikt från kundens två filer.
    Avtalsfil + El.txt är enda källan för Ahlsell-priser.
    Inga kundspecifika priser, rabatter eller manuella prispatchar lagras i GitHub. */
 (function(){
@@ -16,7 +16,16 @@
   let meta={};
   let loadStarted=false;
 
-  const art=v=>String(v||'').trim().replace(/\s+/g,'');
+  // E-nummer förekommer i appen med/utan inledande nollor, mellanslag och ibland E-prefix/suffix.
+  // Normalisera samma sätt både vid import och uppslag så 220, 0000220 och "E 00 002 20" träffar samma rad.
+  const art=v=>{
+    let s=String(v||'').trim().toUpperCase().replace(/\s+/g,'');
+    if(/^E[-:]?\d{1,7}$/.test(s)) s=s.replace(/^E[-:]?/,'');
+    if(/^\d{1,7}$/.test(s)) return s.padStart(7,'0');
+    const suff=s.match(/^(\d{1,7})E$/);
+    if(suff) return suff[1].padStart(7,'0')+'E';
+    return s;
+  };
   const sv=(v,f=0)=>{
     if(v===null||v===undefined||v==='') return f;
     const n=Number(String(v).replace(/\s/g,'').replace(',','.'));
@@ -79,7 +88,7 @@
       if(cls){
         classes[cls]={rabatt,specific,net,chain};
         classCount++;
-      }else if(a && (net>0 || specific>0 || chain>0 || rabatt>0) && /^[0-9A-Za-zÄÖÅäöå-]+$/.test(a)){
+      }else if(a && (net>0 || specific>0 || chain>0 || rabatt>0) && /^[0-9A-ZÄÖÅ-]+$/.test(a)){
         articles[a]={rabatt,specific,net,chain};
         articleCount++;
       }
@@ -88,8 +97,7 @@
   }
 
   // Ahlsells beräknade nettopriser följer decimalavrundning till helt öre.
-  // Vid exakt x,5 öre används half-even (banker's rounding), vilket matchar
-  // verifierade avtalspriser som 97,50 × 23 % = 22,42 och 92,50 × 31,4 % = 29,04.
+  // Vid exakt x,5 öre används half-even (banker's rounding).
   function roundHalfEven(n){
     const lo=Math.floor(n);
     const frac=n-lo;
@@ -105,6 +113,7 @@
   }
 
   function priceForBaseRow(a,gnpCents,cls,agreement){
+    a=art(a);
     const rule=agreement?.articles?.[a];
     if(rule?.net>0) return rule.net;
     if(rule?.specific>0) return discountPrice(gnpCents,rule.specific);
@@ -113,8 +122,6 @@
 
     const cr=agreement?.classes?.[cls];
     if(!(gnpCents>0)) return 0;
-    // Ahlsells egen Excel-modell använder 0 % rabatt när varken artikel-
-    // eller materialklassavtal finns. Då är beräkningsgrunden/GNP priset för raden.
     if(!cr) return gnpCents;
     if(cr.net>0) return cr.net;
     if(cr.specific>0) return discountPrice(gnpCents,cr.specific);
@@ -124,6 +131,7 @@
 
   function calculateFromBase(text,agreement){
     const prices={};
+    const missingArticles=[];
     let rows=0,priced=0,missingBase=0,missingClass=0;
     for(const raw of String(text||'').split(/\r?\n/)){
       if(!raw.trim() || raw.length<38) continue;
@@ -137,11 +145,12 @@
         prices[a]=cents/100;
         priced++;
       }else{
+        missingArticles.push(a);
         if(!(gnp>0)) missingBase++;
         else if(!agreement?.classes?.[cls] && !agreement?.articles?.[a]) missingClass++;
       }
     }
-    return {prices,rows,priced,missingBase,missingClass};
+    return {prices,rows,priced,missingBase,missingClass,missingArticles};
   }
 
   async function readFileText(file){
@@ -155,7 +164,6 @@
     const parsed=parseAgreement(await readFileText(file));
     if(parsed.classCount<100) throw new Error('Filen ser inte ut som en Ahlsell-avtalsfil');
     contract=parsed;
-    // Ett nytt avtal får aldrig kombineras med priser beräknade från ett äldre avtal.
     contractPrices={};
     await Promise.all([dbSet(CONTRACT_ID,parsed),dbSet(PRICE_ID,{})]);
     meta={agreementName:file.name,agreementImported:new Date().toISOString(),
@@ -172,7 +180,8 @@
     contractPrices=result.prices;
     await dbSet(PRICE_ID,contractPrices);
     meta={...meta,baseName:file.name,baseImported:new Date().toISOString(),
-      baseRows:result.rows,priced:result.priced,missingBase:result.missingBase,missingClass:result.missingClass};
+      baseRows:result.rows,priced:result.priced,missingBase:result.missingBase,
+      missingClass:result.missingClass,missingArticles:result.missingArticles};
     await dbSet(META_ID,meta);
     if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
     try{if(typeof render==='function') render();}catch{}
@@ -199,6 +208,10 @@
     const cp=Number(contractPrices[key]);
     return Number.isFinite(cp)&&cp>0?cp:null;
   }
+  function missingInSource(a){
+    const key=art(a);
+    return Array.isArray(meta.missingArticles)&&meta.missingArticles.includes(key);
+  }
   function rowPrice(row){return row&&row[0]?byArt(row[0]):null;}
   function unitPrice(m){if(!m)return 0;if(m.eNr)return byArt(m.eNr)||0;return Math.max(0,sv(m.unitPrice,0));}
 
@@ -207,7 +220,8 @@
     for(const m of (Array.isArray(rows)?rows:[])){
       if(!m?.eNr) continue;
       const p=byArt(m.eNr);
-      if(p==null || Number(m.unitPrice)===p) continue;
+      if(p==null) continue;
+      if(Number(m.unitPrice)===p && m.priceMissing===false) continue;
       m.unitPrice=p;
       m.priceMissing=false;
       changed++;
@@ -225,10 +239,13 @@
     const priceText=hasPrices
       ? `El-priser: ${Number(meta.priced||Object.keys(contractPrices).length).toLocaleString('sv-SE')} artiklar`
       : 'El-beräkningsgrund saknas';
+    const missingText=hasPrices&&Number(meta.missingBase||0)>0
+      ? `<br>Ahlsell saknar prisgrund på ${Number(meta.missingBase).toLocaleString('sv-SE')} rader i El.txt.`
+      : '';
     return `<div class="card" style="margin-bottom:16px">
       <div class="bold">Ahlsell avtalspriser</div>
       <div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">
-        ${agreementText}<br>${priceText}<br>
+        ${agreementText}<br>${priceText}${missingText}<br>
         Pris = avtalsfil + El.txt. Inga manuella Ahlsell-prispatchar används.<br>
         Filerna behandlas lokalt på denna enhet och laddas inte upp till GitHub.
       </div>
@@ -277,14 +294,16 @@
   },true);
 
   window.LiRoPrice={
-    version:116,
+    version:117,
     source:'ahlsell-files-only',
+    normalizeArt:art,
     parseSvNumber:sv,
     parseAgreement,
     calculateFromBase,
     priceForBaseRow,
     resolveByArt:byArt,
     resolveRow:rowPrice,
+    missingInSource,
     syncRows,
     importAgreementFile,
     importBaseFile,
@@ -305,18 +324,22 @@
   if(typeof add==='function') window.addMaterial=function(jobId,input){
     const x={...(input||{})};
     x.qty=Math.max(0,sv(x.qty,0));
-    x.unitPrice=x.eNr?(byArt(x.eNr)||0):Math.max(0,sv(x.unitPrice,0));
-    if(x.eNr)x.priceMissing=byArt(x.eNr)==null;
+    if(x.eNr){
+      x.eNr=art(x.eNr);
+      const p=byArt(x.eNr);
+      x.unitPrice=p||0;
+      x.priceMissing=p==null;
+    }else{
+      x.unitPrice=Math.max(0,sv(x.unitPrice,0));
+    }
     return add(jobId,x);
   };
 
+  // Material ska alltid kunna registreras. Om Ahlsells El.txt saknar prisgrund
+  // sparas raden med priceMissing=true i stället för att blockera elektrikern.
   const bump=window.bumpMaterialQty;
   if(typeof bump==='function') window.bumpMaterialQty=function(jobId,row,delta,kind){
     const d=sv(delta,0);
-    if(d>0&&row?.[0]&&rowPrice(row)==null){
-      alert('Pris saknas för artikeln. Importera avtalsfilen och El.txt under materialinställningar.');
-      return Promise.resolve(0);
-    }
     return bump(jobId,row,d,kind);
   };
 
