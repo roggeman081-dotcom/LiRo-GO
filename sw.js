@@ -5,7 +5,7 @@
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v119';
+const CACHE = 'lirogo-v120';
 const EXPORT_CACHE = 'lirogo-export-libs-v63';
 const EXPORT_LIBS = [
   'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
