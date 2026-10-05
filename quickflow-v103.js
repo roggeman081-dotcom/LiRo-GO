@@ -190,3 +190,67 @@
 
   try{if(typeof render==='function') render();}catch{}
 })();
+
+/* LiRo GO v104 – en enda säker källa för materialpris.
+   Katalogens/listans pris får aldrig presenteras som inköpspris.
+   Endast verifierade/manuellt satta nettopriser i lirogo_price_overrides används.
+   Saknas nettopris visas "Pris saknas" och snabbregistrering blockeras tills pris anges. */
+(function(){
+  'use strict';
+  if(window._liroVerifiedPriceSourceV104) return;
+  window._liroVerifiedPriceSourceV104=true;
+
+  function overrides(){
+    try{return JSON.parse(localStorage.getItem('lirogo_price_overrides')||'{}')||{};}
+    catch{return {};}
+  }
+  function netPriceFor(row){
+    if(!row||!row[0]) return '';
+    const value=Number(overrides()[row[0]]);
+    return Number.isFinite(value)&&value>0?value:'';
+  }
+
+  window.effectivePrice=function(row){ return netPriceFor(row); };
+
+  const oldFmtKr=window.fmtKr;
+  if(typeof oldFmtKr==='function'){
+    window.fmtKr=function(value){
+      if(value===''||value==null||!Number.isFinite(Number(value))) return 'Pris saknas';
+      return oldFmtKr(Number(value));
+    };
+  }
+
+  function warnMissingPrice(){
+    alert('Pris saknas för artikeln. Ange ditt verifierade inköpspris först. Katalogens listpris används inte som nettopris.');
+  }
+
+  document.addEventListener('click',function(e){
+    const b=e.target.closest&&e.target.closest('[data-act]');
+    if(!b) return;
+    const action=b.dataset.act;
+
+    if(action==='bump-qty'&&Number(b.dataset.delta)>0&&typeof catalogRow==='function'){
+      const row=catalogRow(b.dataset.artnr);
+      if(row&&netPriceFor(row)===''){
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        warnMissingPrice();
+      }
+      return;
+    }
+
+    if(action==='save-material'){
+      const d=(typeof st!=='undefined'&&st.matDraft)||{};
+      if(d.eNr){
+        const n=Number(d.unitPrice);
+        if(!Number.isFinite(n)||n<=0){
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          warnMissingPrice();
+        }
+      }
+    }
+  },true);
+
+  try{if(typeof render==='function') render();}catch{}
+})();
