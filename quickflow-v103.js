@@ -191,6 +191,20 @@
   try{if(typeof render==='function') render();}catch{}
 })();
 
+/* Verifierat mot Ahlsell 2026-10-05: E-nr 0461543 har nettopris 34,78 kr/m.
+   Egen migrationsnyckel så rättningen slår igenom även på enheter där v1 redan körts. */
+(function(){
+  'use strict';
+  const MIGRATION_KEY='lirogo_verified_net_prices_2026_10_05_v2_0461543';
+  if(localStorage.getItem(MIGRATION_KEY)==='done') return;
+  let overrides={};
+  try{overrides=JSON.parse(localStorage.getItem('lirogo_price_overrides')||'{}')||{};}catch{overrides={};}
+  overrides['0461543']=34.78;
+  localStorage.setItem('lirogo_price_overrides',JSON.stringify(overrides));
+  localStorage.setItem(MIGRATION_KEY,'done');
+  try{if(typeof render==='function') render();}catch{}
+})();
+
 /* LiRo GO v104 – en enda säker källa för materialpris.
    Katalogens/listans pris får aldrig presenteras som inköpspris.
    Endast verifierade/manuellt satta nettopriser i lirogo_price_overrides används.
