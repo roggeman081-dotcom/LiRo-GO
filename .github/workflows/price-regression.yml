@@ -60,19 +60,21 @@ jobs:
           ].join('\n');
           const base=[
             baseLine({art:'2044120',gnp:12200,cls:'QL0700'}),
-            baseLine({art:'9999999',gnp:99999,cls:'QL0700'})
+            baseLine({art:'9999999',gnp:99999,cls:'QL0700'}),
+            baseLine({art:'8888888',gnp:4567,cls:'NOPE00'})
           ].join('\n');
 
           const parsed=LiRoPrice.parseAgreement(agreement);
           const result=LiRoPrice.calculateFromBase(base,parsed);
           if(result.prices['2044120']!==42.82) throw new Error('Materialklassrabatt räknas fel: '+result.prices['2044120']);
           if(result.prices['9999999']!==12.34) throw new Error('Explicit nettopris prioriteras inte: '+result.prices['9999999']);
+          if(result.prices['8888888']!==45.67) throw new Error('0 % rabatt ska ge beräkningsgrund/GNP: '+result.prices['8888888']);
 
-          const unknown=effectivePrice(['8888888',138,'M','UNKNOWN']);
-          if(unknown!==null) throw new Error('Okänd artikel föll tillbaka till katalog/listpris: '+unknown);
+          const unknown=effectivePrice(['7777777',138,'M','UNKNOWN']);
+          if(unknown!==null) throw new Error('Artikel som inte finns i importerad beräkningsgrund fick pris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v116'")) throw new Error('PWA-cache är inte uppdaterad till v116');
+          if(!sw.includes("const CACHE = 'lirogo-v118'")) throw new Error('PWA-cache är inte uppdaterad till v118');
           if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
@@ -87,5 +89,5 @@ jobs:
           const barcode=fs.readFileSync('barcode-v96.js','utf8');
           if(!barcode.includes('barcodeCandidatesV110') || !barcode.includes("compact.slice(0,-1)")) throw new Error('Streckkod 1500136E normaliseras inte till E-nummer');
 
-          console.log('Prisregression OK', {version:LiRoPrice.version,classPrice:result.prices['2044120'],explicit:result.prices['9999999']});
+          console.log('Prisregression OK', {version:LiRoPrice.version,classPrice:result.prices['2044120'],explicit:result.prices['9999999'],zeroDiscount:result.prices['8888888']});
           NODE
