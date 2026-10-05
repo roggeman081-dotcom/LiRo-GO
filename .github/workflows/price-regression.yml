@@ -44,12 +44,12 @@ jobs:
           global.render=()=>true;
           vm.runInThisContext(fs.readFileSync('price-engine-v105.js','utf8'));
 
-          if(!global.LiRoPrice || LiRoPrice.version!==114) throw new Error('Prisengine är inte v114');
+          if(!global.LiRoPrice || LiRoPrice.version!==115) throw new Error('Prisengine är inte v115');
 
-          const agreementLine=({art='',cls='',discount=0,specific=0,net=0}) =>
+          const agreementLine=({art='',cls='',discount=0,specific=0,net=0,chain=0}) =>
             '  '+'N'+'0000000'+String(art).padEnd(20,' ')+String(cls).padEnd(6,' ')+
             String(discount).padStart(4,'0')+String(specific).padStart(4,'0')+
-            String(net).padStart(9,'0')+'0000'+' '.repeat(30)+'261231';
+            String(net).padStart(9,'0')+String(chain).padStart(4,'0')+' '.repeat(30)+'261231';
           const baseLine=({art,gnp,cls}) =>
             String(art).padEnd(20,' ')+String(gnp).padStart(12,'0')+String(cls).padEnd(6,' ')+'ST '+' TEST';
 
@@ -71,12 +71,13 @@ jobs:
           if(unknown!==null) throw new Error('Okänd artikel föll tillbaka till katalog/listpris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v114'")) throw new Error('PWA-cache är inte uppdaterad till v114');
-          if(sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska inte ligga i precache');
+          if(!sw.includes("const CACHE = 'lirogo-v115'")) throw new Error('PWA-cache är inte uppdaterad till v115');
+          if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
           if(!source.includes('data-ahlsell-file="base"') || !source.includes('data-ahlsell-file="agreement"')) throw new Error('Ahlsell-importens filval saknas');
           if(!source.includes('Kundavtalet laddas inte upp till GitHub')) throw new Error('Integritetsinformationen saknas');
+          if(source.includes('AHLSSELL_EXPLICIT') || source.includes("'2044120':42.82")) throw new Error('Kundspecifika priser får inte ligga hårdkodade i GitHub');
 
           const barcode=fs.readFileSync('barcode-v96.js','utf8');
           if(!barcode.includes('barcodeCandidatesV110') || !barcode.includes("compact.slice(0,-1)")) throw new Error('Streckkod 1500136E normaliseras inte till E-nummer');
