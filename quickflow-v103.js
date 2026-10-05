@@ -166,3 +166,27 @@
     }
   },250);
 })();
+
+/* LiRo GO prisfix 2026-10-05.
+   Verifierade Allcell/Ahlsell-nettopriser ska vinna över katalog-/listpris.
+   Körs en gång så att efterföljande manuella prisändringar inte skrivs över. */
+(function(){
+  'use strict';
+  const MIGRATION_KEY='lirogo_verified_net_prices_2026_10_05_v1';
+  if(localStorage.getItem(MIGRATION_KEY)==='done') return;
+
+  const verifiedNetPrices={
+    '0445707':22.42,
+    '1500136':64.07,
+    '1377701':385.70,
+    '1820444':93.61
+  };
+
+  let overrides={};
+  try{overrides=JSON.parse(localStorage.getItem('lirogo_price_overrides')||'{}')||{};}catch{overrides={};}
+  Object.entries(verifiedNetPrices).forEach(([artnr,price])=>{overrides[artnr]=price;});
+  localStorage.setItem('lirogo_price_overrides',JSON.stringify(overrides));
+  localStorage.setItem(MIGRATION_KEY,'done');
+
+  try{if(typeof render==='function') render();}catch{}
+})();
