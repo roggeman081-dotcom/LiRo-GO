@@ -1,10 +1,9 @@
-/* LiRo GO v115 – Ahlsell avtalspris lokalt på enheten.
-   Kundens avtalsfil och beräkningsgrund läses endast i webbläsaren.
-   Inga kundspecifika priser eller rabatter lagras i GitHub. */
+/* LiRo GO v116 – Ahlsell avtalspris strikt från kundens två filer.
+   Avtalsfil + El.txt är enda källan för Ahlsell-priser.
+   Inga kundspecifika priser, rabatter eller manuella prispatchar lagras i GitHub. */
 (function(){
   'use strict';
 
-  const MANUAL_KEY='lirogo_price_overrides';
   const DB_NAME='lirogo-prices';
   const DB_VERSION=1;
   const STORE='data';
@@ -26,10 +25,6 @@
   const intField=(s,a,b)=>{
     const v=String(s||'').slice(a,b).trim();
     return /^\d+$/.test(v)?Number(v):0;
-  };
-  const manual=()=>{
-    try{return JSON.parse(localStorage.getItem(MANUAL_KEY)||'{}')||{};}
-    catch{return {};}
   };
 
   function openPriceDb(){
@@ -119,8 +114,7 @@
     const cr=agreement?.classes?.[cls];
     if(!(gnpCents>0)) return 0;
     // Ahlsells egen Excel-modell använder 0 % rabatt när varken artikel-
-    // eller materialklassavtal finns. Då är beräkningsgrunden/GNP kundens
-    // beräknade pris för raden, inte ett osäkert katalogfallback.
+    // eller materialklassavtal finns. Då är beräkningsgrunden/GNP priset för raden.
     if(!cr) return gnpCents;
     if(cr.net>0) return cr.net;
     if(cr.specific>0) return discountPrice(gnpCents,cr.specific);
@@ -161,8 +155,10 @@
     const parsed=parseAgreement(await readFileText(file));
     if(parsed.classCount<100) throw new Error('Filen ser inte ut som en Ahlsell-avtalsfil');
     contract=parsed;
-    await dbSet(CONTRACT_ID,parsed);
-    meta={...meta,agreementName:file.name,agreementImported:new Date().toISOString(),
+    // Ett nytt avtal får aldrig kombineras med priser beräknade från ett äldre avtal.
+    contractPrices={};
+    await Promise.all([dbSet(CONTRACT_ID,parsed),dbSet(PRICE_ID,{})]);
+    meta={agreementName:file.name,agreementImported:new Date().toISOString(),
       classCount:parsed.classCount,articleCount:parsed.articleCount};
     await dbSet(META_ID,meta);
     return parsed;
@@ -201,9 +197,7 @@
   function byArt(a){
     const key=art(a);
     const cp=Number(contractPrices[key]);
-    if(Number.isFinite(cp)&&cp>0) return cp;
-    const mp=Number(manual()[key]);
-    return Number.isFinite(mp)&&mp>0?mp:null;
+    return Number.isFinite(cp)&&cp>0?cp:null;
   }
   function rowPrice(row){return row&&row[0]?byArt(row[0]):null;}
   function unitPrice(m){if(!m)return 0;if(m.eNr)return byArt(m.eNr)||0;return Math.max(0,sv(m.unitPrice,0));}
@@ -235,7 +229,8 @@
       <div class="bold">Ahlsell avtalspriser</div>
       <div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">
         ${agreementText}<br>${priceText}<br>
-        Filerna behandlas lokalt på denna enhet. Kundavtalet laddas inte upp till GitHub.
+        Pris = avtalsfil + El.txt. Inga manuella Ahlsell-prispatchar används.<br>
+        Filerna behandlas lokalt på denna enhet och laddas inte upp till GitHub.
       </div>
       <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px">
         <label class="primary-btn" style="cursor:pointer">
@@ -267,7 +262,7 @@
       if(typeof flash==='function') flash(kind==='agreement'?'Läser avtalsfil…':'Beräknar Ahlsell-priser…');
       if(kind==='agreement'){
         const r=await importAgreementFile(file);
-        if(typeof flash==='function') flash(`Avtalsfil klar: ${r.classCount.toLocaleString('sv-SE')} rabattgrupper`);
+        if(typeof flash==='function') flash(`Avtalsfil klar: ${r.classCount.toLocaleString('sv-SE')} rabattgrupper. Importera El.txt.`);
       }else{
         const r=await importBaseFile(file);
         if(typeof flash==='function') flash(`Priser klara: ${r.priced.toLocaleString('sv-SE')} artiklar`);
@@ -281,23 +276,9 @@
     }
   },true);
 
-  if(typeof window.addEventListener==='function') window.addEventListener('click',e=>{
-    const b=e.target?.closest?.('[data-act]');
-    if(!b || b.dataset.act!=='bump-qty' || !(Number(b.dataset.delta)>0)) return;
-    const a=art(b.dataset.artnr);
-    const p=byArt(a);
-    if(p==null) return;
-    try{
-      const o=manual();
-      if(Number(o[a])!==p){
-        o[a]=p;
-        localStorage.setItem(MANUAL_KEY,JSON.stringify(o));
-      }
-    }catch{}
-  },true);
-
   window.LiRoPrice={
-    version:115,
+    version:116,
+    source:'ahlsell-files-only',
     parseSvNumber:sv,
     parseAgreement,
     calculateFromBase,
@@ -333,7 +314,7 @@
   if(typeof bump==='function') window.bumpMaterialQty=function(jobId,row,delta,kind){
     const d=sv(delta,0);
     if(d>0&&row?.[0]&&rowPrice(row)==null){
-      alert('Pris saknas för artikeln. Importera Ahlsell-filerna under materialinställningar.');
+      alert('Pris saknas för artikeln. Importera avtalsfilen och El.txt under materialinställningar.');
       return Promise.resolve(0);
     }
     return bump(jobId,row,d,kind);
