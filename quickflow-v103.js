@@ -60,6 +60,35 @@
     };
   }
 
+  /* iOS/PWA-säkring: krysset på första steget får inte vara beroende av att
+     history.back() alltid ger ett popstate-event. Försök normal historik först,
+     men stäng direkt till startsidan om webbläsaren inte svarar. */
+  document.addEventListener('click',function(e){
+    const close=e.target.closest&&e.target.closest('[data-act="wiz-back"]');
+    if(!close || typeof st==='undefined' || st?.view!=='wizard' || Number(st.step)!==0) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    let fallback=setTimeout(()=>{
+      if(st?.view==='wizard' && Number(st.step)===0){
+        st={view:'home'};
+        try{draft=null;}catch{}
+        try{searchQuery='';}catch{}
+        if(typeof render==='function') render();
+      }
+    },120);
+
+    try{
+      history.back();
+    }catch(err){
+      clearTimeout(fallback);
+      st={view:'home'};
+      try{draft=null;}catch{}
+      try{searchQuery='';}catch{}
+      if(typeof render==='function') render();
+    }
+  },true);
+
   document.addEventListener('click',function(e){
     const el=e.target.closest&&e.target.closest('[data-v103]');
     if(!el||el.dataset.v103!=='finish') return;
