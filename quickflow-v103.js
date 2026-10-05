@@ -30,10 +30,6 @@
     };
   }
 
-  // Kärnappens patchWizFooter uppdaterar bara .primary-btn. I snabbflödet finns
-  // även granskningsknappen, så spegla samma enabled/disabled-läge dit efter
-  // varje fältändring. Annars kan "Granska allt först" förbli låst efter att
-  // titeln har fyllts i trots att detailsMissing() är tom.
   const oldPatchWizFooter=window.patchWizFooter;
   if(typeof oldPatchWizFooter==='function'){
     window.patchWizFooter=function(){
@@ -52,7 +48,6 @@
   if(typeof oldWork==='function'){
     window.vArbetslage=function(job){
       let html=oldWork(job);
-      const marker='</div>\n      ${st.matPanel ? vMaterialPanel(job) : \'\'}';
       const button=`<button class="work103-finish" data-v103="finish">${ICON.check}<span>Avsluta / fakturaunderlag</span></button>`;
       const screenEnd='        </div>\n      </div>';
       const pos=html.indexOf(screenEnd);
@@ -76,7 +71,6 @@
     render();
   },true);
 })();
-
 
 /* LiRo GO kundimport 2026-10-03 – 276 kunder från kundlista.
    Engångsimport, dublettsäker och utan att skriva över befintliga uppgifter. */
@@ -185,117 +179,16 @@
   },250);
 })();
 
-/* LiRo GO prisfix 2026-10-05.
-   Verifierade Allcell/Ahlsell-nettopriser ska vinna över katalog-/listpris.
-   Körs en gång så att efterföljande manuella prisändringar inte skrivs över. */
+/* LiRo GO v115 – enda prislagret. Legacy-prispatchar är borttagna så de inte
+   blockerar priser som räknats fram från Ahlsells El.txt + avtalsfil. */
 (function(){
   'use strict';
-  const MIGRATION_KEY='lirogo_verified_net_prices_2026_10_05_v1';
-  if(localStorage.getItem(MIGRATION_KEY)==='done') return;
-
-  const verifiedNetPrices={
-    '0445707':22.42,
-    '1500136':64.07,
-    '1377701':385.70,
-    '1820444':93.61
-  };
-
-  let overrides={};
-  try{overrides=JSON.parse(localStorage.getItem('lirogo_price_overrides')||'{}')||{};}catch{overrides={};}
-  Object.entries(verifiedNetPrices).forEach(([artnr,price])=>{overrides[artnr]=price;});
-  localStorage.setItem('lirogo_price_overrides',JSON.stringify(overrides));
-  localStorage.setItem(MIGRATION_KEY,'done');
-
-  try{if(typeof render==='function') render();}catch{}
-})();
-
-/* Verifierat mot Ahlsell 2026-10-05: E-nr 0461543 har nettopris 34,78 kr/m.
-   Egen migrationsnyckel så rättningen slår igenom även på enheter där v1 redan körts. */
-(function(){
-  'use strict';
-  const MIGRATION_KEY='lirogo_verified_net_prices_2026_10_05_v2_0461543';
-  if(localStorage.getItem(MIGRATION_KEY)==='done') return;
-  let overrides={};
-  try{overrides=JSON.parse(localStorage.getItem('lirogo_price_overrides')||'{}')||{};}catch{overrides={};}
-  overrides['0461543']=34.78;
-  localStorage.setItem('lirogo_price_overrides',JSON.stringify(overrides));
-  localStorage.setItem(MIGRATION_KEY,'done');
-  try{if(typeof render==='function') render();}catch{}
-})();
-
-/* LiRo GO v104 – en enda säker källa för materialpris.
-   Katalogens/listans pris får aldrig presenteras som inköpspris.
-   Endast verifierade/manuellt satta nettopriser i lirogo_price_overrides används.
-   Saknas nettopris visas "Pris saknas" och snabbregistrering blockeras tills pris anges. */
-(function(){
-  'use strict';
-  if(window._liroVerifiedPriceSourceV104) return;
-  window._liroVerifiedPriceSourceV104=true;
-
-  function overrides(){
-    try{return JSON.parse(localStorage.getItem('lirogo_price_overrides')||'{}')||{};}
-    catch{return {};}
-  }
-  function netPriceFor(row){
-    if(!row||!row[0]) return '';
-    const value=Number(overrides()[row[0]]);
-    return Number.isFinite(value)&&value>0?value:'';
-  }
-
-  window.effectivePrice=function(row){ return netPriceFor(row); };
-
-  const oldFmtKr=window.fmtKr;
-  if(typeof oldFmtKr==='function'){
-    window.fmtKr=function(value){
-      if(value===''||value==null||!Number.isFinite(Number(value))) return 'Pris saknas';
-      return oldFmtKr(Number(value));
-    };
-  }
-
-  function warnMissingPrice(){
-    alert('Pris saknas för artikeln. Ange ditt verifierade inköpspris först. Katalogens listpris används inte som nettopris.');
-  }
-
-  document.addEventListener('click',function(e){
-    const b=e.target.closest&&e.target.closest('[data-act]');
-    if(!b) return;
-    const action=b.dataset.act;
-
-    if(action==='bump-qty'&&Number(b.dataset.delta)>0&&typeof catalogRow==='function'){
-      const row=catalogRow(b.dataset.artnr);
-      if(row&&netPriceFor(row)===''){
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        warnMissingPrice();
-      }
-      return;
-    }
-
-    if(action==='save-material'){
-      const d=(typeof st!=='undefined'&&st.matDraft)||{};
-      if(d.eNr){
-        const n=Number(d.unitPrice);
-        if(!Number.isFinite(n)||n<=0){
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          warnMissingPrice();
-        }
-      }
-    }
-  },true);
-
-  try{if(typeof render==='function') render();}catch{}
-})();
-
-/* LiRo GO v105 loader – separat fil för gemensam prislogik i hela appen. */
-(function(){
-  'use strict';
-  if(window._liroPriceEngineLoaderV105) return;
-  window._liroPriceEngineLoaderV105=true;
+  if(window._liroPriceEngineLoaderV115) return;
+  window._liroPriceEngineLoaderV115=true;
   const s=document.createElement('script');
-  s.src='./price-engine-v105.js?v=111';
+  s.src='./price-engine-v105.js?v=115';
   s.async=false;
   s.onload=()=>{ try{ if(typeof render==='function') render(); }catch{} };
-  s.onerror=()=>console.error('Kunde inte ladda price-engine-v105.js');
+  s.onerror=()=>console.error('Kunde inte ladda price-engine-v105.js v115');
   document.head.appendChild(s);
 })();
