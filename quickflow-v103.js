@@ -268,3 +268,16 @@
 
   try{if(typeof render==='function') render();}catch{}
 })();
+
+/* LiRo GO v105 loader – separat fil för gemensam prislogik i hela appen. */
+(function(){
+  'use strict';
+  if(window._liroPriceEngineLoaderV105) return;
+  window._liroPriceEngineLoaderV105=true;
+  const s=document.createElement('script');
+  s.src='./price-engine-v105.js?v=105';
+  s.async=false;
+  s.onload=()=>{ try{ if(typeof render==='function') render(); }catch{} };
+  s.onerror=()=>console.error('Kunde inte ladda price-engine-v105.js');
+  document.head.appendChild(s);
+})();
