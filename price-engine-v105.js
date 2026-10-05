@@ -106,7 +106,11 @@
     if(rule?.rabatt>0) return discountPrice(gnpCents,rule.rabatt);
 
     const cr=agreement?.classes?.[cls];
-    if(!cr || !(gnpCents>0)) return 0;
+    if(!(gnpCents>0)) return 0;
+    // Ahlsells egen Excel-modell använder 0 % rabatt när varken artikel-
+    // eller materialklassavtal finns. Då är beräkningsgrunden/GNP kundens
+    // beräknade pris för raden, inte ett osäkert katalogfallback.
+    if(!cr) return gnpCents;
     if(cr.net>0) return cr.net;
     if(cr.specific>0) return discountPrice(gnpCents,cr.specific);
     if(cr.chain>0) return discountPrice(gnpCents,cr.chain);
@@ -266,9 +270,6 @@
     }
   },true);
 
-  // Kompatibilitet med äldre v104-klickskydd i quickflow:
-  // lägg bara den klickade artikelns aktuella avtalspris i den lilla legacy-mappen
-  // innan eventet når document-listenern. Hela prislistan ligger fortsatt i IndexedDB.
   if(typeof window.addEventListener==='function') window.addEventListener('click',e=>{
     const b=e.target?.closest?.('[data-act]');
     if(!b || b.dataset.act!=='bump-qty' || !(Number(b.dataset.delta)>0)) return;
