@@ -110,6 +110,8 @@ const server=http.createServer((req,res)=>{
     const chooserPromise=newPage.waitForEvent('filechooser');
     await newPage.getByLabel('Välj färdig prislista',{exact:true}).click();
     const chooser=await chooserPromise;
+    // A background render while iOS Files is open must not detach the picker.
+    await newPage.evaluate(()=>render());
     await chooser.setFiles({name:'lirogo-ahlsell-priser.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
     await newPage.waitForFunction(count=>LiRoPrice.contractCount()===count||document.querySelector('[data-ahlsell-import-status]')?.textContent.includes('misslyckades'),Object.keys(data.prices).length).catch(async error=>{
       console.error('Import state:',await newPage.evaluate(()=>({count:LiRoPrice.contractCount(),status:document.querySelector('[data-ahlsell-import-status]')?.textContent,fileSize:document.querySelector('[data-ahlsell-file="prepared"]')?.files?.[0]?.size})));throw error;

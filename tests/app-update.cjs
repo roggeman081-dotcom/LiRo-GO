@@ -43,6 +43,8 @@ server.on('connection',socket=>{sockets.add(socket);socket.on('close',()=>socket
     await page.locator('#liro-app-update').waitFor({state:'visible',timeout:15000});
     await page.locator('#liro-app-update').click();
     await page.waitForFunction(()=>!document.getElementById('liro-app-update'));
+    // The update banner disappears as navigation begins, before scripts reload.
+    await page.waitForFunction(()=>!!window.LiRoPrice,{},{timeout:15000});
     await page.evaluate(()=>LiRoPrice.ready);
     assert.equal(await page.evaluate(()=>LiRoPrice.resolveByArt('220')),12.34);
     assert(await page.evaluate(async()=>(await dbAll('customers')).some(c=>c.name==='Bevara kund vid uppdatering')));
