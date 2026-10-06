@@ -3565,6 +3565,7 @@ function vSettingsHub(){
       </div>
     </div>
     <div class="settings-body">
+      <button class="tile row-tile" data-act="check-app-update"><span class="t-text">Uppdatera appen<span class="t-sub" style="display:block">Version 133</span></span>${ICON.chevronRight}</button>
       <button class="tile row-tile" data-act="open-settings-tab" data-tab="ai">${ICON.sparkle}<span class="t-text">AI-assistent<span class="t-sub" style="display:block">API-nyckel och modell</span></span>${ICON.chevronRight}</button>
       <div style="margin-top:12px">
         <button class="tile row-tile" data-act="open-settings-tab" data-tab="material">${ICON.box}<span class="t-text">Material<span class="t-sub" style="display:block">Egna priser per artikel</span></span>${ICON.chevronRight}</button>
@@ -4581,6 +4582,43 @@ $app.addEventListener('click', async e=>{
 });
 
 /* ================= Boot ================= */
+let appUpdateRegistration;
+let appUpdateCheckAt=0;
+function showAppUpdate(){
+  if(document.getElementById('liro-app-update')) return;
+  const button=document.createElement('button');
+  button.id='liro-app-update';
+  button.textContent='Ny version klar – tryck för att öppna';
+  button.style.cssText='position:fixed;top:env(safe-area-inset-top,0px);left:12px;right:12px;z-index:2147483647;padding:18px;border-radius:14px;background:#ff8500;color:#111;font-weight:700';
+  button.onclick=()=>{
+    if(dictationSession){flash('Stoppa dikteringen innan du öppnar den nya versionen.');return;}
+    if(st.view==='wizard'&&!confirm('Öppna den nya versionen? Ett osparat uppdrag behöver skapas om.')) return;
+    location.reload();
+  };
+  document.body.append(button);
+}
+async function checkAppUpdate(manual=false){
+  if(!('serviceWorker' in navigator)) return;
+  if(!manual&&Date.now()-appUpdateCheckAt<60000) return;
+  appUpdateCheckAt=Date.now();
+  try{
+    appUpdateRegistration=appUpdateRegistration||await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
+    await appUpdateRegistration.update();
+    if(manual&&!appUpdateRegistration.installing) flash('Senaste uppdateringskontrollen är klar.');
+  }catch{if(manual) flash('Uppdateringen kunde inte hämtas. Kontrollera internetanslutningen.');}
+}
+if('serviceWorker' in navigator){
+  let hadController=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(hadController) showAppUpdate();
+    hadController=true;
+  });
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible') checkAppUpdate();});
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('[data-act="check-app-update"]')) return;
+    checkAppUpdate(true);
+  });
+}
 (async function boot(){
   try{
     DB = await openDB();
@@ -4596,7 +4634,7 @@ $app.addEventListener('click', async e=>{
   render();
 
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
+    checkAppUpdate();
   }
 })();
 </script>

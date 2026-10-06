@@ -523,3 +523,6 @@ jobs:
 
       - name: Verify private price activation and offline material registration
         run: node tests/price-activation.cjs
+
+      - name: Verify installed app upgrades without losing prices or customers
+        run: node tests/app-update.cjs
