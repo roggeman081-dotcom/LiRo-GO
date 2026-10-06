@@ -339,7 +339,7 @@
     try{
       if(typeof flash==='function') flash(kind==='agreement'?'Läser avtalsfil…':'Beräknar Ahlsell-priser…');
       if(kind==='prepared'){
-        const r=await importPreparedPrices(JSON.parse(await readFileText(file)));
+        const r=await importPreparedPrices(JSON.parse(await file.text()));
         try{await navigator.storage?.persist?.();}catch{}
         if(typeof flash==='function') flash(`Priser sparade: ${r.priced.toLocaleString('sv-SE')} artiklar. Fungerar även offline.`);
       }else if(kind==='agreement'){
