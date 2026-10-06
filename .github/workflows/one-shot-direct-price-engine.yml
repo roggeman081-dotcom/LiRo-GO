@@ -20,7 +20,6 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           p=Path('index.html')
           s=p.read_text()
@@ -42,20 +41,12 @@ jobs:
           p=Path('sw.js')
           s=p.read_text().replace("const CACHE = 'lirogo-v123';","const CACHE = 'lirogo-v124';")
           p.write_text(s)
-
-          p=Path('.github/workflows/price-regression.yml')
-          s=p.read_text()
-          s=s.replace("if(!sw.includes(\"const CACHE = 'lirogo-v122'\")) throw new Error('PWA-cache är inte uppdaterad till v122');",
-                      "if(!sw.includes(\"const CACHE = 'lirogo-v124'\")) throw new Error('PWA-cache är inte uppdaterad till v124');")
-          s=s.replace("const quick=fs.readFileSync('quickflow-v103.js','utf8');\n          if(!quick.includes('price-engine-v105.js?v=115')) throw new Error('Quickflow ska fortfarande ladda prisfilen; queryversionen påverkar inte filinnehållet');\n          if(quick.includes('_liroVerifiedPriceSourceV104') || quick.includes('lirogo_verified_net_prices_2026_10_05')) throw new Error('Legacy-prispatch finns kvar och kan blockera avtalspriser');",
-                      "const quick=fs.readFileSync('quickflow-v103.js','utf8');\n          const html=fs.readFileSync('index.html','utf8');\n          if(!html.includes('src=\\\"./price-engine-v105.js\\\"')) throw new Error('Prisengine laddas inte direkt av index.html');\n          if(quick.includes('price-engine-v105.js?v=115') || quick.includes('_liroPriceEngineLoaderV115')) throw new Error('Legacy dynamisk prisloader finns kvar');\n          if(quick.includes('_liroVerifiedPriceSourceV104') || quick.includes('lirogo_verified_net_prices_2026_10_05')) throw new Error('Legacy-prispatch finns kvar och kan blockera avtalspriser');")
-          p.write_text(s)
           PY
       - name: Commit fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html quickflow-v103.js sw.js .github/workflows/price-regression.yml
+          git add index.html quickflow-v103.js sw.js
           git diff --cached --quiet && exit 0
-          git commit -m "Load Ahlsell price engine directly and fix PWA tests"
+          git commit -m "Load Ahlsell price engine directly"
           git push origin main
