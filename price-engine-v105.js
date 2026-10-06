@@ -326,7 +326,9 @@
   const oldSettings=window.vSettingsMaterial;
   if(typeof oldSettings==='function'){
     window.vSettingsMaterial=function(){
-      return statusHtml()+oldSettings.apply(this,arguments);
+      const html=oldSettings.apply(this,arguments);
+      const marker='<div class="settings-body">';
+      return html.replace(marker,marker+statusHtml());
     };
   }
 
@@ -337,9 +339,9 @@
     const file=el.files&&el.files[0];
     if(!file) return;
     try{
-      if(typeof flash==='function') flash(kind==='agreement'?'Läser avtalsfil…':'Beräknar Ahlsell-priser…');
+      // Keep the file input attached while WebKit reads its File object.
       if(kind==='prepared'){
-        const r=await importPreparedPrices(JSON.parse(await file.text()));
+        const r=await importPreparedPrices(JSON.parse(new TextDecoder().decode(await file.arrayBuffer())));
         try{await navigator.storage?.persist?.();}catch{}
         if(typeof flash==='function') flash(`Priser sparade: ${r.priced.toLocaleString('sv-SE')} artiklar. Fungerar även offline.`);
       }else if(kind==='agreement'){

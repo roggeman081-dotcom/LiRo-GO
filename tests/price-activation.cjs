@@ -94,10 +94,15 @@ const server=http.createServer((req,res)=>{
     assert.deepEqual(errors,[]);
     await context.close();
     const fresh=await browser.newContext({...devices['iPhone 15 Pro'],serviceWorkers:'block'});
-    const newPage=await fresh.newPage();await newPage.goto(url);await newPage.evaluate(()=>LiRoPrice.ready);
+    const newPage=await fresh.newPage();
+    newPage.on('dialog',async dialog=>{console.error('Price import dialog:',dialog.message());await dialog.accept();});
+    newPage.on('pageerror',error=>console.error('Price import page error:',error.message));
+    await newPage.goto(url);await newPage.evaluate(()=>LiRoPrice.ready);
     assert.equal(await newPage.evaluate(()=>LiRoPrice.contractCount()),0,'A visitor without the private activation link must not receive prices');
     // Restore the actual ready-made file from inside the installed-app UI.
     await newPage.evaluate(()=>{st={view:'home'};settingsOpen=true;st.settingsTab='material';render();});
+    await newPage.getByText('Ahlsell avtalspriser',{exact:true}).waitFor({state:'visible'});
+    await newPage.getByText('Återställ färdig prislista',{exact:true}).waitFor({state:'visible'});
     await newPage.locator('[data-ahlsell-file="prepared"]').setInputFiles({name:'lirogo-ahlsell-priser.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
     await newPage.waitForFunction(count=>LiRoPrice.contractCount()===count,Object.keys(data.prices).length);
     await newPage.reload();await newPage.evaluate(()=>LiRoPrice.ready);
