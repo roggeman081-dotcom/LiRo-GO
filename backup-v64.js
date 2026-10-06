@@ -5,7 +5,7 @@
   if(window._liroBackupV64) return;
   window._liroBackupV64=true;
 
-  const BACKUP_VERSION=74;
+  const BACKUP_VERSION=130;
   const STORE_CANDIDATES=['customers','jobs','photos','materials','checklist','inspection','radar'];
   const SECRET_STORAGE_KEYS=new Set(['lirogo_ai_key']);
 
@@ -87,6 +87,8 @@
       if(r.supported) stores[name]=r.rows;
     }
     const counts={}; for(const [k,v] of Object.entries(stores)) counts[k]=Array.isArray(v)?v.length:0;
+    const ahlsellPrices=window.LiRoPrice?.exportPreparedPrices
+      ? await window.LiRoPrice.exportPreparedPrices() : null;
     return {
       app:'LiRo GO',
       format:'lirogo-backup',
@@ -94,6 +96,7 @@
       createdAt:new Date().toISOString(),
       source:{userAgent:navigator.userAgent||'',href:location.href},
       counts,
+      ahlsellPrices,
       stores,
       localStorage:localStorageSnapshot()
     };
@@ -123,6 +126,11 @@
     if(!data||data.format!=='lirogo-backup'||!data.stores||typeof data.stores!=='object') throw new Error('Ogiltig LiRo GO-backup');
     let restored=0,skipped=0;
     if(typeof dbPut!=='function') throw new Error('Databasen kan inte återställas i denna version');
+    // Validate and commit prices before restoring other data; older backups have no price field.
+    if(data.ahlsellPrices){
+      if(!window.LiRoPrice?.importPreparedPrices) throw new Error('Prisfunktionen kan inte återställas i denna version');
+      await window.LiRoPrice.importPreparedPrices(data.ahlsellPrices);
+    }
     for(const [store,rows] of Object.entries(data.stores)){
       if(!Array.isArray(rows)) continue;
       for(const raw of rows){
@@ -136,7 +144,7 @@
         try{ if(v===null) localStorage.removeItem(k); else localStorage.setItem(k,String(v)); }catch{}
       }
     }
-    return {restored,skipped};
+    return {restored,skipped,prices:window.LiRoPrice?.contractCount?.()||0};
   }
 
   function pickRestoreFile(){
@@ -160,7 +168,7 @@
 
   function card(){
     const last=localStorage.getItem('lirogo_last_backup_v64');
-    return `<section class="backup-v64"><div class="bold">Backup till dator</div><div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">Skapar en lokal backupfil med kunder, jobb, material, bilder, kontroller, checklistor, Radar och appinställningar. AI-nyckeln tas inte med.</div><div class="backup-v64-actions"><button type="button" class="primary" data-act="backup-now-v64">Skapa backup</button><button type="button" data-act="restore-backup-v64">Återställ backup</button></div><div class="muted" style="font-size:11px;margin-top:10px">${last?`Senaste backup: ${esc(last)}`:'Ingen backup skapad ännu på denna enhet.'}</div></section>`;
+    return `<section class="backup-v64"><div class="bold">Backup till dator</div><div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">Skapar en lokal backupfil med kunder, jobb, material, bilder, kontroller, checklistor, Radar, Ahlsell-priser och appinställningar. AI-nyckeln tas inte med.</div><div class="backup-v64-actions"><button type="button" class="primary" data-act="backup-now-v64">Skapa backup</button><button type="button" data-act="restore-backup-v64">Återställ backup</button></div><div class="muted" style="font-size:11px;margin-top:10px">${last?`Senaste backup: ${esc(last)}`:'Ingen backup skapad ännu på denna enhet.'}</div></section>`;
   }
 
   const oldHome=vHome;

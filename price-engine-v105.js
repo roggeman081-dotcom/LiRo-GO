@@ -252,6 +252,13 @@
     return {priced:count};
   }
 
+  async function exportPreparedPrices(){
+    await window.LiRoPrice.ready;
+    if(!Object.keys(contractPrices).length) return null;
+    return {format:'lirogo-ahlsell-prices-v1',meta:{priced:Object.keys(contractPrices).length,
+      missingBasePrice:Number(meta.missingBase)||0},prices:{...contractPrices}};
+  }
+
   function byArt(a){
     const key=art(a);
     const cp=Number(contractPrices[key]);
@@ -298,6 +305,10 @@
         ${hasPrices?'Priserna används automatiskt i alla uppdrag, även offline.':'Aktivera din prislista en gång för att använda den i alla uppdrag.'}<br>
         Filerna behandlas lokalt på denna enhet och laddas inte upp till GitHub.
       </div>
+      <label class="primary-btn" style="display:block;margin-top:12px;cursor:pointer">
+        Återställ färdig prislista
+        <input type="file" accept=".json,application/json" data-ahlsell-file="prepared" style="display:none">
+      </label>
       <details style="margin-top:12px"><summary>Uppdatera priser från Ahlsell-filer</summary>
       <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px">
         <label class="primary-btn" style="cursor:pointer">
@@ -327,7 +338,11 @@
     if(!file) return;
     try{
       if(typeof flash==='function') flash(kind==='agreement'?'Läser avtalsfil…':'Beräknar Ahlsell-priser…');
-      if(kind==='agreement'){
+      if(kind==='prepared'){
+        const r=await importPreparedPrices(JSON.parse(await readFileText(file)));
+        try{await navigator.storage?.persist?.();}catch{}
+        if(typeof flash==='function') flash(`Priser sparade: ${r.priced.toLocaleString('sv-SE')} artiklar. Fungerar även offline.`);
+      }else if(kind==='agreement'){
         const r=await importAgreementFile(file);
         if(typeof flash==='function') flash(`Avtalsfil klar: ${r.classCount.toLocaleString('sv-SE')} rabattgrupper. Importera El.txt.`);
       }else{
@@ -359,6 +374,7 @@
     importBaseFile,
     parsePreparedPrices,
     importPreparedPrices,
+    exportPreparedPrices,
     ready:loadPersisted(),
     getMeta:()=>({...meta}),
     contractCount:()=>Object.keys(contractPrices).length

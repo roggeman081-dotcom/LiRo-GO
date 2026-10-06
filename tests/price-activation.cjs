@@ -84,12 +84,35 @@ const server=http.createServer((req,res)=>{
     });
     assert(rejected.failed);assert.equal(rejected.countAfter,rejected.count);
     assert.equal(rejected.row.unitPrice,0);assert.equal(rejected.row.priceMissing,true);
+    await page.evaluate(()=>{st={view:'home'};settingsOpen=false;render();});
+    const downloadPromise=page.waitForEvent('download');
+    await page.locator('[data-act="backup-now-v64"]').click();
+    const download=await downloadPromise;
+    const backup=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
+    assert.equal(Object.keys(backup.ahlsellPrices.prices).length,Object.keys(data.prices).length);
+    assert.equal(backup.ahlsellPrices.prices['0000220'],expected);
     assert.deepEqual(errors,[]);
     await context.close();
     const fresh=await browser.newContext({...devices['iPhone 15 Pro'],serviceWorkers:'block'});
     const newPage=await fresh.newPage();await newPage.goto(url);await newPage.evaluate(()=>LiRoPrice.ready);
     assert.equal(await newPage.evaluate(()=>LiRoPrice.contractCount()),0,'A visitor without the private activation link must not receive prices');
+    // Restore the actual ready-made file from inside the installed-app UI.
+    await newPage.evaluate(()=>{st={view:'home'};settingsOpen=true;st.settingsTab='material';render();});
+    await newPage.locator('[data-ahlsell-file="prepared"]').setInputFiles({name:'lirogo-ahlsell-priser.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
+    await newPage.waitForFunction(count=>LiRoPrice.contractCount()===count,Object.keys(data.prices).length);
+    await newPage.reload();await newPage.evaluate(()=>LiRoPrice.ready);
+    assert.equal(await newPage.evaluate(()=>LiRoPrice.resolveByArt('220')),expected);
+    const restoredContext=await browser.newContext({...devices['iPhone 15 Pro'],serviceWorkers:'block'});
+    const restoredPage=await restoredContext.newPage();
+    restoredPage.on('dialog',dialog=>dialog.accept());
+    await restoredPage.goto(url);await restoredPage.evaluate(()=>LiRoPrice.ready);
+    await restoredPage.evaluate(()=>{st={view:'home'};settingsOpen=false;render();});
+    await restoredPage.locator('[data-act="restore-backup-v64"]').click();
+    await restoredPage.locator('input[type="file"][accept="application/json,.json"]').setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
+    await restoredPage.waitForFunction(count=>LiRoPrice.contractCount()===count,Object.keys(data.prices).length);
+    assert.equal(await restoredPage.evaluate(()=>LiRoPrice.resolveByArt('220')),expected);
+    await restoredContext.close();
     await fresh.close();
-    console.log(JSON.stringify({ok:true,articles:Object.keys(data.prices).length,activation:true,material:true,offline:true,persistence:true,invalidActivationPreservesPrices:true,publicVisitorHasNoPrices:true}));
+    console.log(JSON.stringify({ok:true,articles:Object.keys(data.prices).length,activation:true,material:true,offline:true,persistence:true,invalidActivationPreservesPrices:true,publicVisitorHasNoPrices:true,preparedFileImport:true,backupRestoresPrices:true}));
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>server.close());
