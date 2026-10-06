@@ -33,6 +33,8 @@
   let detectBusyV96=false;
   let lastDetectV110=0;
   let scanNoV110=0;
+  let scanStartedV137=0;
+  let readingV137={code:'',count:0,since:0};
   const cropCanvasV110=document.createElement('canvas');
 
   function stopScannerV96(){
@@ -41,6 +43,7 @@
     detectBusyV96=false;
     lastDetectV110=0;
     scanNoV110=0;
+    readingV137={code:'',count:0,since:0};
   }
 
   function scannerFormatsV96(){
@@ -111,6 +114,17 @@
     if(!original) return [];
     const compact=original.replace(/[\s-]+/g,'');
     const out=[original,compact];
+    // Map explicit article numbers in QR links, never truncate GTIN/EAN codes.
+    try{
+      const url=new URL(String(raw||'').trim());
+      for(const key of ['artnr','artikelnummer','e-nummer','enummer']){
+        const value=url.searchParams.get(key);
+        if(value&&/^E?\d{5,7}E?$/i.test(value)) out.push(...barcodeCandidatesV110(value));
+      }
+      const last=url.pathname.split('/').filter(Boolean).pop()||'';
+      if(/^\d{7}E?$/i.test(last)) out.push(...barcodeCandidatesV110(last));
+    }catch{}
+    if(/^\d{1,7}$/.test(compact)) out.push(compact.padStart(7,'0'));
     // Ahlsell/E-nummer förekommer på etiketter som t.ex. 1500136E medan
     // katalogens artikelnummer är 1500136.
     if(/^\d{5,10}E$/.test(compact)) out.push(compact.slice(0,-1));
@@ -131,21 +145,16 @@
         if(row) return {raw:String(raw||'').trim(),code,row,matched:true};
       }catch{}
     }
-    for(const code of candidates){
-      try{
-        const hits=typeof searchCatalog==='function'?searchCatalog(code,5):[];
-        if(hits?.length){
-          const row=hits[0];
-          return {raw:String(raw||'').trim(),code:row?.[0]||code,row,matched:true};
-        }
-      }catch{}
-    }
     return {raw:String(raw||'').trim(),code:candidates[0]||String(raw||'').trim(),row:null,matched:false};
   }
 
-  async function applyBarcodeV96(raw){
+  async function applyBarcodeV96(raw,requireMatch=false){
     const resolved=await resolveBarcodeV110(raw);
     if(!resolved.code) return false;
+    if(requireMatch&&!resolved.matched){
+      setScannerMsgV96('Kod '+resolved.raw+' saknar artikelträff. Rikta kameran mot etikettens E-nummer/streckkod eller skriv E-numret manuellt.',true);
+      return false;
+    }
     st.matSearch=resolved.code;
     st.scannerLastCodeV96=resolved.raw;
     st.scannerMatchedV96=resolved.matched;
@@ -213,6 +222,7 @@
       const detector=await createDetectorV96();
       st.scannerLoading=false;
       setScannerMsgV96('Rikta streckkoden innanför ramen. LiRo söker automatiskt när koden blir skarp.');
+      scanStartedV137=performance.now();
       scanLoopV96(video,detector);
     }catch(err){
       const expectedPermissionError=err && ['NotAllowedError','SecurityError','NotFoundError','NotReadableError','NotSupportedError'].includes(err.name);
@@ -249,7 +259,14 @@
       detectBusyV96=true;
       try{
         const codes=await detectFrameV110(video,detector);
-        if(codes?.length&&codes[0]?.rawValue){ await applyBarcodeV96(codes[0].rawValue); return; }
+        if(now-scanStartedV137<900) return;
+        const code=String(codes?.[0]?.rawValue||'').trim();
+        if(!code){readingV137={code:'',count:0,since:0};return;}
+        if(readingV137.code!==code) readingV137={code,count:1,since:now};
+        else readingV137.count++;
+        if(readingV137.count<3||now-readingV137.since<600) return;
+        await applyBarcodeV96(code,true);
+        readingV137={code:'',count:0,since:now};
       }catch(err){
         if(!st.scannerError){
           console.error('barcode v110 detect',err);
@@ -305,7 +322,7 @@
     setScannerMsgV96('Läser bilden…');
     try{
       const code=await decodeSourceV96(input.files[0]);
-      if(code) await applyBarcodeV96(code);
+      if(code) await applyBarcodeV96(code,true);
       else setScannerMsgV96('Ingen streckkod hittades i bilden. Prova närmare och med bättre ljus.',true);
     }catch(err){
       console.error('barcode v110 photo',err);
