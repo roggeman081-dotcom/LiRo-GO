@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'index.html'
       - 'price-engine-v105.js'
       - 'quickflow-v103.js'
       - 'barcode-v96.js'
@@ -12,6 +13,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'index.html'
       - 'price-engine-v105.js'
       - 'quickflow-v103.js'
       - 'barcode-v96.js'
@@ -93,7 +95,7 @@ jobs:
           if(unknown!==null) throw new Error('Manuell prispatch får inte användas som Ahlsell-pris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v122'")) throw new Error('PWA-cache är inte uppdaterad till v122');
+          if(!sw.includes("const CACHE = 'lirogo-v124'")) throw new Error('PWA-cache är inte uppdaterad till v124');
           if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
@@ -102,7 +104,9 @@ jobs:
           if(source.includes('MANUAL_KEY') || source.includes('AHLSSELL_EXPLICIT') || source.includes("'2044120':42.82")) throw new Error('Manuella eller hårdkodade kundpriser får inte finnas i prisengine');
 
           const quick=fs.readFileSync('quickflow-v103.js','utf8');
-          if(!quick.includes('price-engine-v105.js?v=115')) throw new Error('Quickflow ska fortfarande ladda prisfilen; queryversionen påverkar inte filinnehållet');
+          const html=fs.readFileSync('index.html','utf8');
+          if(!html.includes('src="./price-engine-v105.js"')) throw new Error('Prisengine laddas inte direkt av index.html');
+          if(quick.includes('price-engine-v105.js?v=115') || quick.includes('_liroPriceEngineLoaderV115')) throw new Error('Legacy dynamisk prisloader finns kvar');
           if(quick.includes('_liroVerifiedPriceSourceV104') || quick.includes('lirogo_verified_net_prices_2026_10_05')) throw new Error('Legacy-prispatch finns kvar och kan blockera avtalspriser');
 
           const barcode=fs.readFileSync('barcode-v96.js','utf8');
