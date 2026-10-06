@@ -97,7 +97,8 @@ jobs:
           if(unknown!==null) throw new Error('Manuell prispatch får inte användas som Ahlsell-pris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v126'")) throw new Error('PWA-cache är inte uppdaterad till v126');
+          const cacheVersion = sw.match(/const CACHE = 'lirogo-v(\d+)'/);
+          if(!cacheVersion || Number(cacheVersion[1]) < 126) throw new Error('PWA-cache måste vara v126 eller nyare');
           if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
