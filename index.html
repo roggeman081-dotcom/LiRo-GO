@@ -364,6 +364,7 @@ function dictateErrorText(err){
 function dictationFieldForKey(key){
   const selectors={
     radar:'[data-field="radar-draft"]',
+    'draft-description':'[data-field="description"]',
     workcapture:'[data-field="work-capture-text"]',
     workai:'[data-field="work-ai-question"]',
     ai:'[data-field="ai-desc"]',
@@ -2243,7 +2244,7 @@ function vStepDetails(){
       <span class="label">Beskrivning</span>
       <div class="desc-wrap">
         <textarea placeholder="Kort beskrivning av uppdraget…" data-field="description">${esc(draft.description)}</textarea>
-        <button class="iconbtn mic-btn" style="width:36px;height:36px" aria-label="Diktera beskrivning">${ICON.mic}</button>
+        <button type="button" class="iconbtn mic-btn ${st.dictatingKey==='draft-description'?'mic-listening':''}" style="width:36px;height:36px" data-act="dictate-draft-description" data-dict-key="draft-description" aria-label="${st.dictatingKey==='draft-description'?'Lyssnar, tryck för att stoppa':'Diktera beskrivning'}">${ICON.mic}</button>
       </div>
     </div>
     <div class="field">
@@ -4307,6 +4308,22 @@ $app.addEventListener('click', async e=>{
     })();
     return;
   }
+  if(a==='dictate-draft-description'){
+    const key='draft-description';
+    if(st.dictatingKey===key){ toggleDictate(key,()=>{}); return; }
+    const currentDraft=draft;
+    const field=dictationFieldForKey(key);
+    const base=String(field?field.value:currentDraft.description||'').trimEnd();
+    const prefix=base?base+'\n':'';
+    dictationLivePrefix[key]=prefix;
+    toggleDictate(key,text=>{
+      if(draft!==currentDraft) return;
+      currentDraft.description=prefix+text.trim();
+      render();
+    });
+    return;
+  }
+
   if(a==='dictate-ai'){
     toggleDictate('ai', (text)=>{ st.aiDesc = text; render(); });
     return;
