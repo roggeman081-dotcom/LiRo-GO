@@ -260,7 +260,10 @@
       try{
         const codes=await detectFrameV110(video,detector);
         if(now-scanStartedV137<900) return;
-        const code=String(codes?.[0]?.rawValue||'').trim();
+        const detected=(codes||[]).filter(entry=>entry?.rawValue);
+        const known=detected.find(entry=>barcodeCandidatesV110(entry.rawValue).some(candidate=>
+          typeof catalogRow==='function'&&catalogRow(candidate)));
+        const code=String((known||detected[0])?.rawValue||'').trim();
         if(!code){readingV137={code:'',count:0,since:0};return;}
         if(readingV137.code!==code) readingV137={code,count:1,since:now};
         else readingV137.count++;

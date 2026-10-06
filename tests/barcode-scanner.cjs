@@ -31,7 +31,7 @@ vm.runInContext(source.replace('  openBarcodeScanner=async function(){','  windo
   assert.equal(closed,0,'Unknown live code must keep camera open');
   assert(message.includes('saknar artikelträff'));
   const video={videoWidth:100,videoHeight:100,readyState:2};
-  const detector={detect:async()=>[{rawValue:'1500136E'}]};
+  const detector={detect:async()=>[{rawValue:'https://example.test/info'},{rawValue:'1500136E'}]};
   context.window.testLoop(video,detector);
   await nextFrame(500);assert.equal(closed,0,'Ignore startup detections');
   await nextFrame(1000);await nextFrame(1200);await nextFrame(1400);
