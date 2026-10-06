@@ -560,10 +560,10 @@ function deriveStatus(plannedAt){
   return 'later';
 }
 async function createJob(input){
-  if(!input?.customerId || !String(input?.title||'').trim()) throw new Error('Kund och namn på uppdrag krävs');
+  if(!String(input?.title||'').trim() || (!input.customerId && !input.customerPending)) throw new Error('Kund eller tillfälligt uppdrag och namn krävs');
   const now=new Date().toISOString(), defaults=getGlobalPriceDefaults();
   const j={
-    id:uid(), customerId:input.customerId, kind:input.kind, title:String(input.title).trim(), workType:input.workType,
+    id:uid(), customerId:input.customerId||null, customerPending:!input.customerId, kind:input.kind, title:String(input.title).trim(), workType:input.workType,
     description:input.description||null, plannedAt:input.plannedAt||null, priority:input.priority,
     isQuote:!!input.isQuote, status:'planned', markupPercent:15, createdAt:now, updatedAt:now,
     siteUsesCustomerAddress:input.siteUsesCustomerAddress!==false,
@@ -1778,7 +1778,7 @@ async function closeTopLayer(){
 window.addEventListener('popstate', async ()=>{ await closeTopLayer(); render(); });
 
 function emptyDraft(){
-  return { kind:null, method:null, existingCustomerId:null,
+  return { kind:null, method:null, existingCustomerId:null, customerPending:false,
     newCustomer:{name:'',phone:'',email:'',address:'',postalCode:'',city:'',saveAsContact:false,
       isCompany:false,orgNumber:'',invoiceAddress:'',invoicePostalCode:'',invoiceCity:'',invoiceReference:'',glnNumber:''},
     worksite:{useCustomerAddress:true, address:'', postalCode:'', city:''},
@@ -1818,6 +1818,7 @@ function draftPlannedAt(){
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 function draftCustomerName(){
+  if(draft.customerPending && !draft.existingCustomerId) return 'Kund väljs senare';
   if(draft.existingCustomerId){ const c=customers.find(x=>x.id===draft.existingCustomerId); return c?c.name:''; }
   return draft.newCustomer.name.trim();
 }
@@ -2174,14 +2175,15 @@ function vStepCustomer(){
       <button class="switch ${draft.newCustomer.saveAsContact?'on':''}" data-act="toggle-save-contact"><div class="knob"></div></button>
     </div>`;
 
-  return `${vWizHeader('Kunduppgifter', false, 0, 4)}<div class="wiz-body">${body}</div>`;
+  return `${vWizHeader('Kunduppgifter', false, 0, 4)}<div class="wiz-body"><button type="button" class="tile row-tile" data-act="skip-customer" style="margin-bottom:16px"><span class="t-text">Välj kund senare<span class="t-sub" style="display:block">Skapa ett tillfälligt uppdrag och registrera material direkt.</span></span></button>
+    ${body}</div>`;
 }
 function vSearchResults(results){
   if(!results.length) return '';
   return `<div class="card">${results.map(c=>`<button class="result-row" data-act="pick-customer" data-id="${c.id}">${esc(c.name)}</button>`).join('')}</div>`;
 }
 function customerMissing(){
-  if(draft.existingCustomerId) return [];
+  if(draft.customerPending || draft.existingCustomerId) return [];
   const m=[]; if(!draft.newCustomer.name.trim()) m.push('Namn'); return m;
 }
 
@@ -2208,6 +2210,7 @@ function vStepWorksite(){
   </div>`;
 }
 function worksiteMissing(){
+  if(draft.customerPending) return [];
   if(draftUsesCustomerAddress()) return [];
   const m=[]; if(!draft.worksite.address.trim()) m.push('Adress'); return m;
 }
@@ -2393,6 +2396,7 @@ function vJobDetail(id){
   const job = jobById(id);
   if(!job) return `${vWizHeader('Uppdrag', true)}<div class="wiz-body"><p class="muted">Uppdraget hittades inte.</p></div>`;
   const tab = st.jobTab || 'oversikt';
+  if(tab==='kund') return vJobCustomer(job);
   if(tab==='arbete') return vJobArbete(job);
   if(tab==='material') return vJobMaterial(job);
   if(tab==='dokumentation') return vJobDokumentation(job);
@@ -2641,6 +2645,49 @@ function vLiRoProjectCheck(job,deps){
 }
 
 /* ---- Uppdrag: Översikt ---- */
+
+function vJobCustomer(job){
+  const current=customerOf(job);
+  const options=customers.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'sv'));
+  return `${vWizHeader('Välj kund',false,undefined,undefined,'job-tab-back')}
+    <div class="job-body">
+      <p>${esc(current?'Nuvarande kund: '+current.name:'Uppdraget saknar kund.')}</p>
+      <div class="field"><span class="label">Kund</span>
+        <select id="jobCustomerSelect" style="width:100%;min-height:48px;font-size:16px">
+          <option value="">Välj befintlig kund</option>
+          ${options.map(c=>`<option value="${esc(String(c.id))}" ${String(c.id)===String(job.customerId)?'selected':''}>${esc(c.name+(c.address?' – '+c.address:''))}</option>`).join('')}
+        </select>
+      </div>
+      <label class="row gap-sm" style="min-height:48px"><input type="checkbox" id="jobCustomerUseAddress">Använd den valda kundens adress som arbetsplats</label>
+      <p class="muted">Tid, material och bilder ligger kvar. Arbetsplatsen behålls om du inte kryssar i rutan. Uppdragets timpris och materialpåslag behålls; kontrollera dem under Priser efter kundbytet.</p>
+      <button type="button" class="primary-btn" data-act="save-job-customer">Spara kund</button>
+    </div>`;
+}
+
+async function assignJobCustomer(job,customer,useAddress){
+  if(!job || !customer) throw new Error('Välj en befintlig kund');
+  if(job.status==='invoiced') throw new Error('Kund kan inte bytas på ett fakturerat uppdrag');
+  const updated={...job,customerId:customer.id,customerPending:false,updatedAt:new Date().toISOString()};
+  if(useAddress){
+    if(!String(customer.address||'').trim()) throw new Error('Kunden saknar adress');
+    updated.siteUsesCustomerAddress=true;
+    updated.siteAddress=customer.address;
+    updated.sitePostalCode=customer.postalCode||null;
+    updated.siteCity=customer.city||null;
+  }else{
+    updated.siteUsesCustomerAddress=false;
+    if(job.siteUsesCustomerAddress!==false){
+      const previous=customerOf(job);
+      updated.siteAddress=previous?.address||job.siteAddress||null;
+      updated.sitePostalCode=previous?.postalCode||job.sitePostalCode||null;
+      updated.siteCity=previous?.city||job.siteCity||null;
+    }
+  }
+  await dbPut('jobs',updated);
+  Object.assign(job,updated);
+  return job;
+}
+
 function vJobOversikt(job){
   const deps={materials:jobMaterials,photos:jobPhotos,checklist,inspection,radar};
   const c = customerOf(job);
@@ -2674,7 +2721,8 @@ function vJobOversikt(job){
         </div>
         <span class="row gap-xs"><span class="dot" style="background:${PRIORITY_COLOR[job.priority]}"></span>${PRIORITY_LABEL[job.priority]}</span>
       </div>
-      <div class="bold" style="font-size:17px">${esc(c?c.name:'')}</div>
+      <div class="bold" style="font-size:17px">${esc(c?c.name:'Kund väljs senare')}</div>
+      ${job.status!=='invoiced'?'<button type="button" class="accent" data-act="open-job-tab" data-tab="kund" style="min-height:44px">'+(c?'Byt kund':'Välj kund')+'</button>':''}
       ${siteAddr ? `<div class="muted row gap-xs" style="margin-top:4px">${ICON.pin}<span>${esc(siteAddr)}</span></div>` : ''}
       <div class="muted row gap-xs" style="margin-top:6px">${ICON.clock}<span>${esc(fmtDateTime(job.plannedAt))}</span></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
@@ -4191,6 +4239,25 @@ $app.addEventListener('click', async e=>{
     settingsOpen=true; st.settingsTab='ai'; pushNav(); return render();
   }
 
+  if(a==='skip-customer'){
+    draft.customerPending=true;
+    draft.existingCustomerId=null;
+    draft.worksite.useCustomerAddress=false;
+    st.step=3; pushNav(); return render();
+  }
+  if(a==='save-job-customer'){
+    const job=jobById(st.id);
+    const selected=$app.querySelector('#jobCustomerSelect');
+    const customer=selected && customers.find(c=>String(c.id)===selected.value);
+    const useAddress=!!$app.querySelector('#jobCustomerUseAddress')?.checked;
+    try{
+      await assignJobCustomer(job,customer,useAddress);
+      st.jobTab='oversikt';
+      flash('Kund sparad. Kontrollera uppdragets priser.');
+      return render();
+    }catch(error){flash(error.message);return;}
+  }
+
   if(a==='wiz-back'){ history.back(); return; }
   if(a==='wiz-goto'){ st.step = +b.dataset.step; pushNav(); return render(); }
   if(a==='wiz-next'){ st.step += 1; pushNav(); return render(); }
@@ -4221,7 +4288,7 @@ $app.addEventListener('click', async e=>{
 
   if(a==='wiz-submit'){
     let customerId = draft.existingCustomerId;
-    if(!customerId){
+    if(!customerId && !draft.customerPending){
       const c = await createCustomer({
         name: draft.newCustomer.name.trim(), phone: draft.newCustomer.phone.trim()||null,
         email: draft.newCustomer.email.trim()||null, address: draft.newCustomer.address.trim()||null,
@@ -4237,7 +4304,7 @@ $app.addEventListener('click', async e=>{
       customerId = c.id;
     }
     const job = await createJob({
-      customerId, kind: draft.kind||'customer_job', title: draft.title.trim(), workType: draft.workType,
+      customerId, customerPending:!customerId && draft.customerPending, kind: draft.kind||'customer_job', title: draft.title.trim(), workType: draft.workType,
       description: draft.description.trim()||null, plannedAt: draftPlannedAt(), priority: draft.priority,
       isQuote: draft.isQuote,
       siteUsesCustomerAddress: draftUsesCustomerAddress(),
