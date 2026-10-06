@@ -1,0 +1,7 @@
+local-data/
+local data/
+node_modules/
+package.json
+package-lock.json
+test-results/
+*-activation-private.*

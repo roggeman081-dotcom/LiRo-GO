@@ -67,6 +67,7 @@
     window.vMaterialPanel=function(job){
       let html=oldMaterialPanel(job);
       const mode=st.matPanelMode||'browse';
+      if(window.LiRoPrice?.contractCount()>0) return html;
       if(mode!=='browse' || html.includes('data-v103="ahlsell-prices"')) return html;
       const marker='<div class="mat-search">';
       const button='<button type="button" class="primary-btn ahlsell-import-v119" data-v103="ahlsell-prices">Ahlsell-priser / importera filer</button>';

@@ -9,6 +9,7 @@ on:
       - '.github/workflows/mobile-smoke.yml'
       - 'index.html'
       - '*.js'
+      - 'tests/**'
       - 'manifest.webmanifest'
   workflow_dispatch:
 
@@ -212,6 +213,10 @@ jobs:
             const coreResponse = await page.goto(url, { waitUntil:'networkidle', timeout:45000 });
             if (!coreResponse || !coreResponse.ok()) throw new Error('Kärnappen svarade inte OK');
             await page.waitForFunction(() => typeof emptyDraft === 'function' && typeof render === 'function', null, { timeout:10000 });
+            // Wait for the opening animation before starting the wizard; its
+            // delayed home transition otherwise overwrites the test's job view.
+            await page.waitForFunction(() => st.view==='home', null, {timeout:10000});
+            await page.evaluate(() => LiRoPrice.ready);
 
             await page.evaluate(() => {
               draft = emptyDraft();
@@ -515,3 +520,6 @@ jobs:
             await browser.close();
           })().catch(err => { console.error(err); process.exit(1); });
           NODE
+
+      - name: Verify private price activation and offline material registration
+        run: node tests/price-activation.cjs

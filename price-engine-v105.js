@@ -1,5 +1,5 @@
-/* LiRo GO v117 – Ahlsell avtalspris strikt från kundens två filer.
-   Avtalsfil + El.txt är enda källan för Ahlsell-priser.
+/* LiRo GO v118 – Ahlsell avtalspris från kundens filer.
+   Avtalsfil + El.txt eller en verifierad färdig prislista används.
    Inga kundspecifika priser, rabatter eller manuella prispatchar lagras i GitHub. */
 (function(){
   'use strict';
@@ -14,7 +14,8 @@
   let contractPrices={};
   let contract=null;
   let meta={};
-  let loadStarted=false;
+  let loadPromise;
+  let pricesLoaded=false;
 
   // E-nummer förekommer i appen med/utan inledande nollor, mellanslag och ibland E-prefix/suffix.
   // Normalisera samma sätt både vid import och uppslag så 220, 0000220 och "E 00 002 20" träffar samma rad.
@@ -161,6 +162,7 @@
   }
 
   async function importAgreementFile(file){
+    await loadPersisted();
     const parsed=parseAgreement(await readFileText(file));
     if(parsed.classCount<100) throw new Error('Filen ser inte ut som en Ahlsell-avtalsfil');
     contract=parsed;
@@ -173,6 +175,7 @@
   }
 
   async function importBaseFile(file){
+    await loadPersisted();
     if(!contract) contract=await dbGet(CONTRACT_ID);
     if(!contract) throw new Error('Importera avtalsfilen först');
     const result=calculateFromBase(await readFileText(file),contract);
@@ -188,19 +191,65 @@
     return result;
   }
 
-  async function loadPersisted(){
-    if(loadStarted) return;
-    loadStarted=true;
-    try{
+  function loadPersisted(){
+    if(loadPromise) return loadPromise;
+    loadPromise=(async()=>{try{
       const [p,c,m]=await Promise.all([dbGet(PRICE_ID),dbGet(CONTRACT_ID),dbGet(META_ID)]);
       if(p&&typeof p==='object') contractPrices=p;
       if(c&&typeof c==='object') contract=c;
       if(m&&typeof m==='object') meta=m;
+      pricesLoaded=true;
       if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
       try{if(typeof render==='function') render();}catch{}
     }catch(err){
       console.warn('Kunde inte läsa lokala Ahlsell-priser',err);
+    }})();
+    return loadPromise;
+  }
+
+  function parsePreparedPrices(data){
+    if(data?.format!=='lirogo-ahlsell-prices-v1' || !data.prices ||
+       typeof data.prices!=='object' || Array.isArray(data.prices))
+      throw new Error('Prislistan har fel format');
+    const prices={};
+    for(const [key,value] of Object.entries(data.prices)){
+      const normalized=art(key);
+      if(!/^[0-9A-ZÄÖÅ-]{1,20}$/.test(normalized) || typeof value!=='number' ||
+         !Number.isFinite(value) || value<=0 || Object.hasOwn(prices,normalized))
+        throw new Error('Prislistan innehåller en ogiltig eller dubbel artikel');
+      prices[normalized]=value;
     }
+    const count=Object.keys(prices).length;
+    if(!count || (data.meta?.priced!=null && data.meta.priced!==count))
+      throw new Error('Prislistans artikelantal stämmer inte');
+    return {prices,count};
+  }
+
+  async function importPreparedPrices(data){
+    const {prices,count}=parsePreparedPrices(data);
+    await loadPersisted();
+    const nextMeta={prepared:true,priced:count,imported:new Date().toISOString(),
+      missingBase:Number(data.meta?.missingBasePrice)||0};
+    const db=await openPriceDb();
+    try{
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction(STORE,'readwrite');
+        const store=tx.objectStore(STORE);
+        store.put({id:PRICE_ID,value:prices});
+        store.put({id:CONTRACT_ID,value:null});
+        store.put({id:META_ID,value:nextMeta});
+        tx.oncomplete=resolve;
+        tx.onerror=()=>reject(tx.error);
+        tx.onabort=()=>reject(tx.error||new Error('Priserna kunde inte sparas'));
+      });
+    }finally{db.close();}
+    contractPrices=prices;
+    contract=null;
+    meta=nextMeta;
+    pricesLoaded=true;
+    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
+    try{if(typeof render==='function') render();}catch{}
+    return {priced:count};
   }
 
   function byArt(a){
@@ -216,14 +265,14 @@
   function unitPrice(m){if(!m)return 0;if(m.eNr)return byArt(m.eNr)||0;return Math.max(0,sv(m.unitPrice,0));}
 
   function syncRows(rows,persist=false){
+    if(!pricesLoaded) return 0;
     let changed=0;
     for(const m of (Array.isArray(rows)?rows:[])){
       if(!m?.eNr) continue;
       const p=byArt(m.eNr);
-      if(p==null) continue;
-      if(Number(m.unitPrice)===p && m.priceMissing===false) continue;
-      m.unitPrice=p;
-      m.priceMissing=false;
+      if(Number(m.unitPrice)===(p||0) && m.priceMissing===(p==null)) continue;
+      m.unitPrice=p||0;
+      m.priceMissing=p==null;
       changed++;
       if(persist && m.id && typeof dbPut==='function') Promise.resolve(dbPut('materials',m)).catch(()=>{});
     }
@@ -235,7 +284,7 @@
     const hasPrices=Object.keys(contractPrices).length>0;
     const agreementText=hasAgreement
       ? `Avtal: ${Number(meta.classCount||contract.classCount||0).toLocaleString('sv-SE')} rabattgrupper`
-      : 'Avtalsfil saknas';
+      : (meta.prepared?'Din färdiga prislista är aktiverad':'Avtalsfil saknas');
     const priceText=hasPrices
       ? `El-priser: ${Number(meta.priced||Object.keys(contractPrices).length).toLocaleString('sv-SE')} artiklar`
       : 'El-beräkningsgrund saknas';
@@ -246,9 +295,10 @@
       <div class="bold">Ahlsell avtalspriser</div>
       <div class="muted" style="font-size:12px;line-height:1.45;margin-top:4px">
         ${agreementText}<br>${priceText}${missingText}<br>
-        Pris = avtalsfil + El.txt. Inga manuella Ahlsell-prispatchar används.<br>
+        ${hasPrices?'Priserna används automatiskt i alla uppdrag, även offline.':'Aktivera din prislista en gång för att använda den i alla uppdrag.'}<br>
         Filerna behandlas lokalt på denna enhet och laddas inte upp till GitHub.
       </div>
+      <details style="margin-top:12px"><summary>Uppdatera priser från Ahlsell-filer</summary>
       <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px">
         <label class="primary-btn" style="cursor:pointer">
           Välj avtalsfil
@@ -258,7 +308,7 @@
           Välj El.txt
           <input type="file" accept=".txt,text/plain" data-ahlsell-file="base" style="display:none">
         </label>
-      </div>
+      </div></details>
     </div>`;
   }
 
@@ -294,7 +344,7 @@
   },true);
 
   window.LiRoPrice={
-    version:117,
+    version:118,
     source:'ahlsell-files-only',
     normalizeArt:art,
     parseSvNumber:sv,
@@ -307,6 +357,9 @@
     syncRows,
     importAgreementFile,
     importBaseFile,
+    parsePreparedPrices,
+    importPreparedPrices,
+    ready:loadPersisted(),
     getMeta:()=>({...meta}),
     contractCount:()=>Object.keys(contractPrices).length
   };
@@ -321,7 +374,8 @@
   };
 
   const add=window.addMaterial;
-  if(typeof add==='function') window.addMaterial=function(jobId,input){
+  if(typeof add==='function') window.addMaterial=async function(jobId,input){
+    await window.LiRoPrice.ready;
     const x={...(input||{})};
     x.qty=Math.max(0,sv(x.qty,0));
     if(x.eNr){
@@ -349,5 +403,4 @@
     return render0.apply(this,arguments);
   };
 
-  setTimeout(loadPersisted,0);
 })();

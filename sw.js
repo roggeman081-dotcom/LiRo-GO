@@ -5,7 +5,7 @@
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v125';
+const CACHE = 'lirogo-v126';
 const EXPORT_CACHE = 'lirogo-export-libs-v63';
 const EXPORT_LIBS = [
   'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
@@ -15,7 +15,7 @@ const CUSTOMER_IMPORT_FILES = [
   './customers-import-1.json','./customers-import-2.json','./customers-import-3.json',
   './customers-import-4.json','./customers-import-5.json','./customers-import-6.json'
 ];
-const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js', './work-v99.js', './before-v100.js', './material-assistant-v83.js', './desktop-v92.js', './stats-v94.js', './barcode-v96.js', './quickflow-v103.js', './price-engine-v105.js', './barcode-polyfill.js', './zxing_reader.wasm', ...CUSTOMER_IMPORT_FILES];
+const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './logo-mark.png', './logo-mark-dark.png', './home-v44.js', './home-v44-safe.js', './theme-v46.js', './rot-v51.js', './assignment-v52.js', './report-v53.js', './finish-v55.js', './nav-v56.js', './break-even-v57.js', './customer-report-v58.js', './export-v59.js', './catalog-v60.js', './material-scope-v61.js', './no-demo-v62.js', './backup-v64.js', './document-job-v66.js', './flow-v67.js', './work-v99.js', './before-v100.js', './material-assistant-v83.js', './desktop-v92.js', './stats-v94.js', './barcode-v96.js', './quickflow-v103.js', './price-engine-v105.js', './price-activation-v126.js', './barcode-polyfill.js', './zxing_reader.wasm', ...CUSTOMER_IMPORT_FILES];
 
 self.addEventListener('install', e => {
   e.waitUntil((async()=>{

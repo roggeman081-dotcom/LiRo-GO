@@ -6,6 +6,7 @@ on:
     paths:
       - 'index.html'
       - 'price-engine-v105.js'
+      - 'price-activation-v126.js'
       - 'quickflow-v103.js'
       - 'barcode-v96.js'
       - 'sw.js'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'index.html'
       - 'price-engine-v105.js'
+      - 'price-activation-v126.js'
       - 'quickflow-v103.js'
       - 'barcode-v96.js'
       - 'sw.js'
@@ -47,7 +49,7 @@ jobs:
           global.indexedDB=undefined;
           vm.runInThisContext(fs.readFileSync('price-engine-v105.js','utf8'));
 
-          if(!global.LiRoPrice || LiRoPrice.version!==117) throw new Error('Prisengine är inte v117');
+          if(!global.LiRoPrice || LiRoPrice.version!==118) throw new Error('Prisengine är inte v118');
           if(LiRoPrice.source!=='ahlsell-files-only') throw new Error('Prisengine är inte låst till Ahlsell-filerna');
           if(LiRoPrice.normalizeArt('220')!=='0000220') throw new Error('E-nummer utan inledande nollor normaliseras inte');
           if(LiRoPrice.normalizeArt('E 00 002 20')!=='0000220') throw new Error('Formaterat E-nummer normaliseras inte');
@@ -95,7 +97,7 @@ jobs:
           if(unknown!==null) throw new Error('Manuell prispatch får inte användas som Ahlsell-pris: '+unknown);
 
           const sw=fs.readFileSync('sw.js','utf8');
-          if(!sw.includes("const CACHE = 'lirogo-v124'")) throw new Error('PWA-cache är inte uppdaterad till v124');
+          if(!sw.includes("const CACHE = 'lirogo-v126'")) throw new Error('PWA-cache är inte uppdaterad till v126');
           if(!sw.includes("'./price-engine-v105.js'")) throw new Error('Prisengine ska finnas i precache');
 
           const source=fs.readFileSync('price-engine-v105.js','utf8');
