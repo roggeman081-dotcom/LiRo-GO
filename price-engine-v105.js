@@ -16,6 +16,12 @@
   let meta={};
   let loadPromise;
   let pricesLoaded=false;
+  let importStatus='';
+  function setImportStatus(message){
+    importStatus=message;
+    const status=document.querySelector('[data-ahlsell-import-status]');
+    if(status) status.textContent=message;
+  }
 
   // E-nummer förekommer i appen med/utan inledande nollor, mellanslag och ibland E-prefix/suffix.
   // Normalisera samma sätt både vid import och uppslag så 220, 0000220 och "E 00 002 20" träffar samma rad.
@@ -305,10 +311,11 @@
         ${hasPrices?'Priserna används automatiskt i alla uppdrag, även offline.':'Aktivera din prislista en gång för att använda den i alla uppdrag.'}<br>
         Filerna behandlas lokalt på denna enhet och laddas inte upp till GitHub.
       </div>
-      <label class="primary-btn" style="display:block;margin-top:12px;cursor:pointer">
-        Återställ färdig prislista
-        <input type="file" accept=".json,application/json" data-ahlsell-file="prepared" style="display:none">
-      </label>
+      <div style="margin-top:12px">
+        <label for="ahlsell-prepared-file" class="bold">Återställ färdig prislista</label>
+        <input id="ahlsell-prepared-file" type="file" data-ahlsell-file="prepared" aria-label="Välj färdig prislista" style="display:block;width:100%;min-height:48px;margin-top:8px;font-size:16px">
+      </div>
+      <div data-ahlsell-import-status role="status" aria-live="polite" style="margin-top:10px;font-size:14px">${typeof esc==='function'?esc(importStatus):''}</div>
       <details style="margin-top:12px"><summary>Uppdatera priser från Ahlsell-filer</summary>
       <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px">
         <label class="primary-btn" style="cursor:pointer">
@@ -340,8 +347,10 @@
     if(!file) return;
     try{
       // Keep the file input attached while WebKit reads its File object.
+      setImportStatus('Läser '+file.name+'…');
       if(kind==='prepared'){
         const r=await importPreparedPrices(JSON.parse(new TextDecoder().decode(await file.arrayBuffer())));
+        setImportStatus(`Klart! ${r.priced.toLocaleString('sv-SE')} priser är sparade.`);
         try{await navigator.storage?.persist?.();}catch{}
         if(typeof flash==='function') flash(`Priser sparade: ${r.priced.toLocaleString('sv-SE')} artiklar. Fungerar även offline.`);
       }else if(kind==='agreement'){
@@ -354,7 +363,7 @@
       try{if(typeof render==='function') render();}catch{}
     }catch(err){
       console.error(err);
-      alert(err?.message||'Importen misslyckades');
+      setImportStatus('Importen misslyckades: '+(err?.message||'Filen kunde inte läsas'));
     }finally{
       try{el.value='';}catch{}
     }

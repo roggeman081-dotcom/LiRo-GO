@@ -5,9 +5,12 @@ const http=require('node:http');
 const crypto=require('node:crypto');
 const {webkit,chromium,devices}=require('playwright');
 const root=path.resolve(__dirname,'..');
+const largePrices={};
+for(let i=1;i<=150117;i++) largePrices[String(i).padStart(7,'0')]=12.34;
+Object.assign(largePrices,{'0000220':12.34,'1234567':56.78,'0603023K':9.87});
 const data=process.env.LIRO_TEST_PRICE_FILE
   ? JSON.parse(fs.readFileSync(process.env.LIRO_TEST_PRICE_FILE,'utf8'))
-  : {format:'lirogo-ahlsell-prices-v1',meta:{priced:3},prices:{'0000220':12.34,'1234567':56.78,'0603023K':9.87}};
+  : {format:'lirogo-ahlsell-prices-v1',meta:{priced:150119},prices:largePrices};
 const key=crypto.randomBytes(32),iv=crypto.randomBytes(12);
 const cipher=crypto.createCipheriv('aes-256-gcm',key,iv);
 const encrypted=Buffer.concat([cipher.update(JSON.stringify(data)),cipher.final(),cipher.getAuthTag()]);
@@ -103,8 +106,12 @@ const server=http.createServer((req,res)=>{
     await newPage.evaluate(()=>{st={view:'home'};settingsOpen=true;st.settingsTab='material';render();});
     await newPage.getByText('Ahlsell avtalspriser',{exact:true}).waitFor({state:'visible'});
     await newPage.getByText('Återställ färdig prislista',{exact:true}).waitFor({state:'visible'});
-    await newPage.locator('[data-ahlsell-file="prepared"]').setInputFiles({name:'lirogo-ahlsell-priser.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
+    const chooserPromise=newPage.waitForEvent('filechooser');
+    await newPage.getByLabel('Välj färdig prislista',{exact:true}).click();
+    const chooser=await chooserPromise;
+    await chooser.setFiles({name:'lirogo-ahlsell-priser.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
     await newPage.waitForFunction(count=>LiRoPrice.contractCount()===count,Object.keys(data.prices).length);
+    await newPage.locator('[data-ahlsell-import-status]').filter({hasText:'Klart!'}).waitFor();
     await newPage.reload();await newPage.evaluate(()=>LiRoPrice.ready);
     assert.equal(await newPage.evaluate(()=>LiRoPrice.resolveByArt('220')),expected);
     const restoredContext=await browser.newContext({...devices['iPhone 15 Pro'],serviceWorkers:'block'});
