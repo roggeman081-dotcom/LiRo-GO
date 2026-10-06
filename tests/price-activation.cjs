@@ -100,6 +100,7 @@ const server=http.createServer((req,res)=>{
     const newPage=await fresh.newPage();
     newPage.on('dialog',async dialog=>{console.error('Price import dialog:',dialog.message());await dialog.accept();});
     newPage.on('pageerror',error=>console.error('Price import page error:',error.message));
+    newPage.on('console',message=>{if(message.type()==='error') console.error('Price import console:',message.text());});
     await newPage.goto(url);await newPage.evaluate(()=>LiRoPrice.ready);
     assert.equal(await newPage.evaluate(()=>LiRoPrice.contractCount()),0,'A visitor without the private activation link must not receive prices');
     // Restore the actual ready-made file from inside the installed-app UI.
@@ -110,7 +111,10 @@ const server=http.createServer((req,res)=>{
     await newPage.getByLabel('Välj färdig prislista',{exact:true}).click();
     const chooser=await chooserPromise;
     await chooser.setFiles({name:'lirogo-ahlsell-priser.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});
-    await newPage.waitForFunction(count=>LiRoPrice.contractCount()===count,Object.keys(data.prices).length);
+    await newPage.waitForFunction(count=>LiRoPrice.contractCount()===count||document.querySelector('[data-ahlsell-import-status]')?.textContent.includes('misslyckades'),Object.keys(data.prices).length).catch(async error=>{
+      console.error('Import state:',await newPage.evaluate(()=>({count:LiRoPrice.contractCount(),status:document.querySelector('[data-ahlsell-import-status]')?.textContent,fileSize:document.querySelector('[data-ahlsell-file="prepared"]')?.files?.[0]?.size})));throw error;
+    });
+    assert.equal(await newPage.evaluate(()=>LiRoPrice.contractCount()),Object.keys(data.prices).length,await newPage.locator('[data-ahlsell-import-status]').innerText());
     await newPage.locator('[data-ahlsell-import-status]').filter({hasText:'Klart!'}).waitFor();
     await newPage.reload();await newPage.evaluate(()=>LiRoPrice.ready);
     assert.equal(await newPage.evaluate(()=>LiRoPrice.resolveByArt('220')),expected);
