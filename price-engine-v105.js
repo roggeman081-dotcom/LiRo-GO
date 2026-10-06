@@ -312,7 +312,7 @@
         Filerna behandlas lokalt på denna enhet och laddas inte upp till GitHub.
       </div>
       <div style="margin-top:12px">
-        <label for="ahlsell-prepared-file" class="bold">Återställ färdig prislista</label>
+        <div class="bold">Återställ färdig prislista</div>
         <button type="button" class="primary-btn" data-ahlsell-choose="prepared" aria-label="Välj färdig prislista" style="display:block;width:100%;min-height:48px;margin-top:8px">Välj prisfil</button>
       </div>
       <div data-ahlsell-import-status role="status" aria-live="polite" style="margin-top:10px;font-size:14px">${typeof esc==='function'?esc(importStatus):''}</div>
@@ -341,20 +341,26 @@
 
   // Keep the picker outside the app's replaceable HTML. Background updates can
   // render while iOS Files is open; replacing its input loses the selected File.
-  const preparedPicker=document.createElement('input');
+  let preparedPicker;
+  function getPreparedPicker(){
+    if(preparedPicker) return preparedPicker;
+    preparedPicker=document.createElement('input');
   preparedPicker.type='file';
   preparedPicker.id='ahlsell-prepared-file';
   preparedPicker.dataset.ahlsellFile='prepared';
   preparedPicker.setAttribute('aria-label','Prisfil');
   preparedPicker.style.cssText='position:fixed;left:-10000px;width:1px;height:1px;opacity:0';
   document.body.append(preparedPicker);
+    return preparedPicker;
+  }
   document.addEventListener('click',e=>{
     const button=e.target.closest?.('[data-ahlsell-choose="prepared"]');
     if(!button) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    preparedPicker.value='';
-    preparedPicker.click();
+    const picker=getPreparedPicker();
+    picker.value='';
+    picker.click();
   },true);
 
   document.addEventListener('change',async e=>{
