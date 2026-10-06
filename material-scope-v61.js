@@ -1,6 +1,7 @@
 /* LiRo GO v61 – lås material till rätt uppdrag.
    Förhindrar att samma E-nummer i olika uppdrag delar antal eller ändras av fel jobb.
-   v123: antal kan skrivas med decimal, t.ex. 2,5 m kabel. */
+   v123: antal kan skrivas med decimal, t.ex. 2,5 m kabel.
+   v138: individuellt materialpåslag per rad. Påslaget är internt och visas inte i fakturaunderlaget. */
 (function(){
   if(window._liroMaterialScopeV61) return;
   window._liroMaterialScopeV61=true;
@@ -9,6 +10,9 @@
   style.textContent=`
     .qty-input-v123{width:54px;min-width:54px;border:0;background:transparent;text-align:center;font:inherit;font-weight:700;color:inherit;padding:4px 2px;border-radius:8px}
     .qty-input-v123:focus{outline:2px solid var(--accent);background:var(--surface)}
+    .line-markup-v138{width:62px;min-width:62px;height:32px;min-height:32px;padding:4px 6px;border-radius:9px;text-align:right;font-size:14px;font-weight:700;background:var(--surface2)}
+    .line-markup-v138:focus{background:var(--surface);outline:2px solid var(--accent)}
+    @media(max-width:560px){.material-cols{gap:10px}.line-markup-v138{width:56px;min-width:56px}}
   `;
   document.head.appendChild(style);
 
@@ -135,4 +139,106 @@
     e.preventDefault();
     el.blur();
   },true);
+
+  /* ---- v138: individuellt påslag per materialrad ---- */
+  const baseCalculateMaterialTotalsV138=typeof calculateMaterialTotals==='function'?calculateMaterialTotals:null;
+  calculateMaterialTotals=function(rows,markupPercent){
+    const arr=Array.isArray(rows)?rows:[];
+    const fallback=Math.max(0,toNumber(markupPercent,15));
+    let cost=0,markupSum=0;
+    for(const m of arr){
+      const rowCost=Math.max(0,toNumber(m?.qty,0))*Math.max(0,toNumber(m?.unitPrice,0));
+      const lineMarkup=m?.markupPercent!==undefined&&m?.markupPercent!==null&&m?.markupPercent!==''
+        ?Math.max(0,toNumber(m.markupPercent,fallback)):fallback;
+      cost+=rowCost;
+      markupSum+=rowCost*(lineMarkup/100);
+    }
+    return {cost,markup:fallback,markupSum,total:cost+markupSum,count:arr.length};
+  };
+
+  function effectiveLineMarkupV138(m,job){
+    if(m&&m.markupPercent!==undefined&&m.markupPercent!==null&&m.markupPercent!=='') return Math.max(0,toNumber(m.markupPercent,0));
+    return Math.max(0,toNumber(job?.markupPercent,15));
+  }
+
+  function refreshMaterialRowV138(row,m,job){
+    if(!row||!m||!job) return;
+    const pct=effectiveLineMarkupV138(m,job);
+    const base=(Math.max(0,toNumber(m.qty,0))*Math.max(0,toNumber(m.unitPrice,0)));
+    const customer=base*(1+pct/100);
+    const customerEl=row.querySelector('.mat-customer-val');
+    if(customerEl) customerEl.textContent=fmtKr(customer);
+
+    const markupVal=row.querySelector('.mat-markup-val');
+    const col=markupVal?.parentElement;
+    if(col&&!col.querySelector('[data-line-markup-v138]')){
+      col.innerHTML='<div class="lbl">Påslag %</div><input class="line-markup-v138" type="text" inputmode="decimal" enterkeyhint="done" aria-label="Påslag procent" data-line-markup-v138="'+esc(m.id)+'" value="'+esc(String(pct).replace('.',','))+'">';
+    }else{
+      const input=col?.querySelector('[data-line-markup-v138]');
+      if(input&&document.activeElement!==input) input.value=String(pct).replace('.',',');
+    }
+  }
+
+  function applyLineMarkupUiV138(){
+    const job=st?.id?jobById(st.id):null;
+    if(!job||!Array.isArray(jobMaterials)) return;
+    document.querySelectorAll('.material-row[data-mid]').forEach(row=>{
+      const m=jobMaterials.find(x=>String(x.id)===String(row.dataset.mid));
+      if(m&&m.kind!=='planned') refreshMaterialRowV138(row,m,job);
+    });
+  }
+
+  async function saveLineMarkupV138(input){
+    const m=jobMaterials.find(x=>String(x.id)===String(input.dataset.lineMarkupV138));
+    const job=st?.id?jobById(st.id):null;
+    if(!m||!job) return;
+    const raw=String(input.value||'').trim().replace(',','.');
+    const n=Number(raw);
+    if(!Number.isFinite(n)||n<0){
+      input.value=String(effectiveLineMarkupV138(m,job)).replace('.',',');
+      flash('Ange påslag i procent, t.ex. 25');
+      return;
+    }
+    m.markupPercent=n;
+    m.updatedAt=new Date().toISOString();
+    await dbPut('materials',m);
+    const row=input.closest('.material-row');
+    refreshMaterialRowV138(row,m,job);
+    if(typeof flash==='function') flash('Påslag sparat för materialraden');
+  }
+
+  document.addEventListener('change',e=>{
+    const input=e.target?.closest?.('[data-line-markup-v138]');
+    if(input) saveLineMarkupV138(input);
+  },true);
+
+  document.addEventListener('keydown',e=>{
+    const input=e.target?.closest?.('[data-line-markup-v138]');
+    if(!input||e.key!=='Enter') return;
+    e.preventDefault();
+    input.blur();
+  },true);
+
+  document.addEventListener('input',e=>{
+    if(e.target?.dataset?.field==='markup') setTimeout(applyLineMarkupUiV138,0);
+  },true);
+
+  const observerV138=new MutationObserver(()=>applyLineMarkupUiV138());
+  observerV138.observe(document.getElementById('app')||document.body,{childList:true,subtree:true});
+  setTimeout(applyLineMarkupUiV138,0);
+
+  /* Fakturaunderlaget ska bara visa kundens materialbelopp. Inköpspris och påslag är internt. */
+  if(typeof vJobFaktura==='function'){
+    const baseJobFakturaV138=vJobFaktura;
+    vJobFaktura=function(job){
+      let html=baseJobFakturaV138(job);
+      const eco=typeof jobEconomySummary==='function'?jobEconomySummary(job):null;
+      const count=(jobMaterials||[]).filter(m=>m.jobId===job.id&&m.kind!=='planned').length;
+      if(eco?.material){
+        const replacement='<div class="row between" style="margin-top:8px"><span class="muted">Material ('+count+' artiklar)</span><span class="bold">'+fmtKr(eco.material.total)+'</span></div>';
+        html=html.replace(/<div class="row between" style="margin-top:8px"><span class="muted">Material \([^<]*<\/span><span class="bold">[^<]*<\/span><\/div>\s*<div class="row between" style="margin-top:8px"><span class="muted">Påslag material \([^<]*<\/span><span class="bold">[^<]*<\/span><\/div>/,replacement);
+      }
+      return html;
+    };
+  }
 })();
