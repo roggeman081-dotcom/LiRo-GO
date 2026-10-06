@@ -139,3 +139,84 @@
     }
   },true);
 })();
+
+/* v111 – strikt GTIN/EAN -> E-nummer för streckkodsläsaren.
+   Endast verifierade exakta kopplingar accepteras. Okända/ogiltiga GTIN ger ingen träff. */
+(function(){
+  'use strict';
+  if(window._liroGtinV111) return;
+  window._liroGtinV111=true;
+
+  const GTIN_TO_ENR=Object.freeze({
+    '7020160388605':'1896016',
+    '6955891822696':'1741065',
+    '3606480210358':'1820737',
+    '3606481069320':'1159609',
+    '3389119405607':'5213081',
+    '3606480200915':'1820516',
+    '3606480210471':'1822476',
+    '3250611614432':'2163652',
+    '7021986300611':'7704691',
+    '3250611621355':'2163773',
+    '3250612400669':'3279345',
+    '3250610092767':'5100545',
+    '4011334528319':'1801993',
+    '4011334488675':'1801802',
+    '3250611623908':'2163802',
+    '3250612400409':'3279360',
+    '3250612400713':'3279347'
+  });
+
+  function compactCode(value){
+    return String(value==null?'':value).trim().replace(/[\s-]+/g,'');
+  }
+
+  function isGtinShape(code){
+    return /^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(code);
+  }
+
+  function validGtin(code){
+    if(!isGtinShape(code)) return false;
+    let sum=0;
+    for(let i=code.length-2,pos=0;i>=0;i--,pos++){
+      sum+=Number(code[i])*(pos%2===0?3:1);
+    }
+    return (10-(sum%10))%10===Number(code[code.length-1]);
+  }
+
+  function mappedEnr(value){
+    const code=compactCode(value);
+    if(!validGtin(code)) return null;
+    return GTIN_TO_ENR[code]||null;
+  }
+
+  window.liroGtinValidV111=validGtin;
+  window.liroGtinToEnrV111=mappedEnr;
+  window.liroGtinMapV111=GTIN_TO_ENR;
+
+  const baseCatalogRow=window.catalogRow;
+  if(typeof baseCatalogRow==='function'){
+    window.catalogRow=function(artnr){
+      const code=compactCode(artnr);
+      if(isGtinShape(code)){
+        const enr=mappedEnr(code);
+        return enr?baseCatalogRow(enr):null;
+      }
+      return baseCatalogRow(artnr);
+    };
+  }
+
+  const baseSearchCatalog=window.searchCatalog;
+  if(typeof baseSearchCatalog==='function'){
+    window.searchCatalog=function(query,limit){
+      const code=compactCode(query);
+      if(isGtinShape(code)){
+        const enr=mappedEnr(code);
+        if(!enr) return [];
+        const row=typeof window.catalogRow==='function'?window.catalogRow(enr):null;
+        return row?[row]:[];
+      }
+      return baseSearchCatalog(query,limit);
+    };
+  }
+})();
