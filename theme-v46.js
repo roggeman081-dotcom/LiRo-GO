@@ -70,6 +70,16 @@
     .theme-option-copy-v46{flex:1;min-width:0}
     .theme-option-title-v46{font-weight:650}
     .theme-option-sub-v46{font-size:12px;color:var(--muted);margin-top:2px}
+
+    /* v140: alla rader i Inställningar ska se ut som samma komponent. */
+    .settings-body > div:empty{display:none!important}
+    .settings-body > .tile.row-tile{margin-top:12px;width:100%;min-height:76px}
+    .settings-body > .tile.row-tile:first-child{margin-top:0}
+    .settings-body > div > .tile.row-tile{width:100%;min-height:76px}
+    .settings-body .tile.row-tile{padding:16px;gap:12px;border-radius:20px;align-items:center}
+    .settings-body .tile.row-tile > svg.i:first-child{width:22px;height:22px;flex:0 0 22px}
+    .settings-body .tile.row-tile .t-text{flex:1;min-width:0}
+
     html[data-liro-resolved-theme="dark"] .brand-mini,
     html[data-liro-resolved-theme="graphite"] .brand-mini,
     html[data-liro-resolved-theme="orange"] .brand-mini,
@@ -165,7 +175,9 @@
 
   const previousSettingsHub=vSettingsHub;
   vSettingsHub=function(){
-    const html=previousSettingsHub();
+    let html=previousSettingsHub();
+    html=html.replace('<button class="tile row-tile" data-act="check-app-update"><span class="t-text">','<button class="tile row-tile" data-act="check-app-update">'+ICON.clock+'<span class="t-text">');
+    html=html.replace('Version 135','Version 140');
     const button='<button class="tile row-tile" data-act="open-settings-tab" data-tab="appearance">'+ICON.sparkle+'<span class="t-text">Utseende<span class="t-sub" style="display:block">Färgtema och mörkt läge</span></span>'+ICON.chevronRight+'</button><div style="margin-top:12px"></div>';
     return html.replace('<div class="settings-body">','<div class="settings-body">'+button);
   };
