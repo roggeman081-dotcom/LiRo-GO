@@ -61,3 +61,23 @@
   window.addEventListener('hashchange',activate);
   activate();
 })();
+
+/* Bugfix: kund-ID från data-attribut är alltid text. Äldre/importerade kunder kan
+   ha numeriskt ID. Bevara kundens riktiga ID-typ när en befintlig kund väljs,
+   annars missar de strikta ID-jämförelserna kunden och arbetsplatsreglaget blir dött. */
+(function(){
+  'use strict';
+  const app=document.getElementById('app');
+  if(!app) return;
+  app.addEventListener('click',e=>{
+    const button=e.target.closest('[data-act="pick-customer"]');
+    if(!button || !app.contains(button)) return;
+    const selected=customers.find(c=>String(c.id)===String(button.dataset.id||''));
+    if(!selected) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    draft.existingCustomerId=selected.id;
+    searchQuery='';
+    render();
+  },true);
+})();
