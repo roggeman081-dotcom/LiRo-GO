@@ -232,17 +232,3 @@
     }
   },250);
 })();
-
-/* LiRo GO v115 – enda prislagret. Legacy-prispatchar är borttagna så de inte
-   blockerar priser som räknats fram från Ahlsells El.txt + avtalsfil. */
-(function(){
-  'use strict';
-  if(window._liroPriceEngineLoaderV115) return;
-  window._liroPriceEngineLoaderV115=true;
-  const s=document.createElement('script');
-  s.src='./price-engine-v105.js?v=115';
-  s.async=false;
-  s.onload=()=>{ try{ if(typeof render==='function') render(); }catch{} };
-  s.onerror=()=>console.error('Kunde inte ladda price-engine-v105.js v115');
-  document.head.appendChild(s);
-})();
