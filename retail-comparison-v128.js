@@ -29,7 +29,8 @@
     }
     return {prices,sources,updatedAt:local.updatedAt};
   }
-  const ready=fetch('https://raw.githubusercontent.com/roggeman081-dotcom/LiRo-GO/main/retail-prices.json',{cache:'no-store',signal:AbortSignal.timeout(8000)}).then(response=>{
+  const feedUrl=window.LIRO_RETAIL_FEED_URL||'https://raw.githubusercontent.com/roggeman081-dotcom/LiRo-GO/main/retail-prices.json';
+  const ready=fetch(feedUrl,{cache:'no-store',signal:AbortSignal.timeout(8000)}).then(response=>{
     if(!response.ok)throw new Error('Latest price list unavailable');
     return response;
   }).catch(()=>fetch('./retail-prices.json',{cache:'no-store',signal:AbortSignal.timeout(8000)})).then(response=>{
