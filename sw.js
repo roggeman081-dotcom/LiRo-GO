@@ -5,7 +5,7 @@
 // katalog-el.json (Ahlsells prislista) precachas medvetet INTE här — den
 // hämtas och cachas lazy av fetch-hanteraren nedan först när materialpanelen
 // öppnas, så appen inte drar ner ~9 MB vid varje installation/uppdatering.
-const CACHE = 'lirogo-v142';
+const CACHE = 'lirogo-v143';
 const EXPORT_CACHE = 'lirogo-export-libs-v63';
 const EXPORT_LIBS = [
   'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
@@ -26,9 +26,16 @@ self.addEventListener('install', e => {
     const exportCache=await caches.open(EXPORT_CACHE);
     await Promise.all(EXPORT_LIBS.map(async url=>{
       const file='./export-libs/'+url.substring(url.lastIndexOf('/')+1);
-      const res=await fetch(file,{cache:'reload'});
-      if(!res.ok) throw new Error('Export library unavailable: '+file);
-      await exportCache.put(url,res);
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),4000);
+      try{
+        const res=await fetch(file,{cache:'reload',signal:controller.signal});
+        if(!res.ok) throw new Error('Export library unavailable: '+file);
+        await exportCache.put(url,res);
+      }catch(err){
+        // An unavailable optional export library must not block an app update.
+        console.warn('Kunde inte precacha exportbiblioteket',file,err);
+      }finally{clearTimeout(timer);}
     }));
 
     await self.skipWaiting();
