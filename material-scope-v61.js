@@ -143,6 +143,7 @@
   /* ---- v138: individuellt påslag per materialrad ---- */
   const baseCalculateMaterialTotalsV138=typeof calculateMaterialTotals==='function'?calculateMaterialTotals:null;
   calculateMaterialTotals=function(rows,markupPercent){
+    if(baseCalculateMaterialTotalsV138) return baseCalculateMaterialTotalsV138(rows,markupPercent);
     const arr=Array.isArray(rows)?rows:[];
     const fallback=Math.max(0,toNumber(markupPercent,15));
     let cost=0,markupSum=0;
@@ -165,9 +166,10 @@
     if(!row||!m||!job) return;
     const pct=effectiveLineMarkupV138(m,job);
     const base=(Math.max(0,toNumber(m.qty,0))*Math.max(0,toNumber(m.unitPrice,0)));
-    const customer=base*(1+pct/100);
+    const customer=Math.max(0,toNumber(m.qty,0))*materialSellingUnitPrice(m,job.markupPercent);
     const customerEl=row.querySelector('.mat-customer-val');
     if(customerEl && customerEl.textContent!==fmtKr(customer)) customerEl.textContent=fmtKr(customer);
+    if(row.querySelector('[data-act="edit-material-selling"]')) return;
 
     const markupVal=row.querySelector('.mat-markup-val');
     const col=markupVal?.parentElement;
@@ -200,8 +202,10 @@
       return;
     }
     m.markupPercent=n;
+    delete m.customerUnitPrice;
     m.updatedAt=new Date().toISOString();
     await dbPut('materials',m);
+    window.dispatchEvent(new Event('liro-material-prices-changed'));
     const row=input.closest('.material-row');
     refreshMaterialRowV138(row,m,job);
     if(typeof flash==='function') flash('Påslag sparat för materialraden');

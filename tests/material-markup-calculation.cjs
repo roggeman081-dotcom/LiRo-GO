@@ -4,6 +4,8 @@ const rows=[{qty:2,unitPrice:100,markupPercent:50,name:'Percentage',unit:'st'},{
 const context={toNumber:(v,f)=>Number.isFinite(Number(v))?Number(v):f,usedMats:()=>rows,clean:v=>String(v)};
 vm.createContext(context);
 vm.runInContext(html.slice(html.indexOf('function materialSellingUnitPrice('),html.indexOf('function quoteMaterialTotals(')),context);
+const scope=fs.readFileSync('material-scope-v61.js','utf8');
+vm.runInContext(scope.slice(scope.indexOf('const baseCalculateMaterialTotalsV138='),scope.indexOf('function effectiveLineMarkupV138(')),context);
 const totals=context.calculateMaterialTotals(rows,25);
 assert.equal(totals.cost,280);assert.equal(totals.total,370);assert.equal(totals.markupSum,90);
 assert.equal(context.calculateMaterialTotals(rows,70).total,370,'Specific prices override general markup');
