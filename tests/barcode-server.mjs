@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {handleRequest} from '../server/barcode-lookup/handler.mjs';
+const origin='https://roggeman081-dotcom.github.io';
+const request=(gtin,from=origin)=>new Request('https://lookup.example.test/',{method:'POST',headers:{origin:from,'Content-Type':'application/json'},body:JSON.stringify({gtin})});
+assert.equal((await handleRequest(new Request('https://lookup.example.test/',{method:'OPTIONS',headers:{origin}}))).status,204);
+assert.equal((await handleRequest(request('4012195931669','https://other.example'))).status,403);
+assert.equal((await handleRequest(request('bad'))).status,400);
+let calls=0;
+const lookup=async()=>{calls++;return {gtin:'04012195931669',eNumber:'0681600'};};
+const response=await handleRequest(request('4012195931669'),lookup);
+assert.equal(response.status,200);
+assert.equal(response.headers.get('Access-Control-Allow-Origin'),origin);
+assert.equal((await response.json()).match.eNumber,'0681600');
+assert.equal((await handleRequest(request('04012195931669'),lookup)).status,200);
+assert.equal(calls,1,'Equivalent GTIN formats must share the cache');
+assert.equal((await handleRequest(request('9780306406157'),async()=>{throw new Error('ambiguous');})).status,409);
+assert.equal((await handleRequest(request('9780306406157'),async()=>{throw new Error('source_unavailable');})).status,503);
+console.log('Portable barcode server: CORS, validation, cache, ambiguity and upstream errors passed');
