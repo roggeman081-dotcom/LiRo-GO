@@ -1,0 +1,678 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-07T18:35:36.660Z",
+  "items": {
+    "1438402": {
+      "name": "ABB Kopplingsdosa AP10 IP65 104x104mm Vit",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1438402",
+          "name": "ABB Kopplingsdosa AP10 IP65 104x104mm Vit",
+          "gtin": "6410016125101",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 43.2,
+          "url": "https://www.elbutik.se/product.html/abb-kopplingsdosa-ap10-ip65-matt104x104mm",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500051": {
+      "name": "Schneider Electric Clips TC 2-3 15mm Natur (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500051",
+          "name": "Schneider Electric Clips TC 2-3 15mm Natur (100st)",
+          "gtin": "7315882001001",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 60,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500061": {
+      "name": "Schneider Electric Clips TC 3-5 20mm Natur (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500061",
+          "name": "Schneider Electric Clips TC 3-5 20mm Natur (100st)",
+          "gtin": "7315882011000",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 63.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500066": {
+      "name": "Schneider Electric Clips TC 3-5 20mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500066",
+          "name": "Schneider Electric Clips TC 3-5 20mm Vit (100st)",
+          "gtin": "7315882011017",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 55.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500081": {
+      "name": "Schneider Electric Clips TC 4-6 20mm Natur (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500081",
+          "name": "Schneider Electric Clips TC 4-6 20mm Natur (100st)",
+          "gtin": "7315882015107",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 60,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500091": {
+      "name": "Schneider Electric Clips TC 5-7 20mm Natur (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500091",
+          "name": "Schneider Electric Clips TC 5-7 20mm Natur (100st)",
+          "gtin": "7315882021009",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 55.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500096": {
+      "name": "Schneider Electric Clips TC 5-7 20mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500096",
+          "name": "Schneider Electric Clips TC 5-7 20mm Vit (100st)",
+          "gtin": "7315882021016",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 60,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500111": {
+      "name": "Schneider Electric Clips TC 5-7 20mm Grå (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500111",
+          "name": "Schneider Electric Clips TC 5-7 20mm Grå (100st)",
+          "gtin": "7315882021023",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 60,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500121": {
+      "name": "Schneider Electric Clips TC 5-7 20mm Svart (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500121",
+          "name": "Schneider Electric Clips TC 5-7 20mm Svart (100st)",
+          "gtin": "7315882021047",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 60.8,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500136": {
+      "name": "Schneider Electric Clips TC 7-10 25mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500136",
+          "name": "Schneider Electric Clips TC 7-10 25mm Vit (100st)",
+          "gtin": "7315882032012",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 79.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500151": {
+      "name": "Schneider Electric Clips TC 7-10 25mm Svart (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500151",
+          "name": "Schneider Electric Clips TC 7-10 25mm Svart (100st)",
+          "gtin": "7315882032043",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 80,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500166": {
+      "name": "Schneider Electric Clips TC 7-10 30mm Vit(100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500166",
+          "name": "Schneider Electric Clips TC 7-10 30mm Vit(100st)",
+          "gtin": "7315882033019",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 79.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500196": {
+      "name": "Schneider Electric Clips TC 8-12 30mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500196",
+          "name": "Schneider Electric Clips TC 8-12 30mm Vit (100st)",
+          "gtin": "7315882041205",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 79.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        },
+        "Bauhaus": {
+          "eNr": "1500196",
+          "name": "Schneider TC 8–12 vit 100 st",
+          "gtin": "7315882041205",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 71.2,
+          "url": "https://www.bauhaus.se/kabelklammer-schneider-electric-8-12mm-rund-100-pack",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500206": {
+      "name": "Schneider Electric Clips TC 8-12 30mm Brun (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500206",
+          "name": "Schneider Electric Clips TC 8-12 30mm Brun (100st)",
+          "gtin": "7315882041267",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 103.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500226": {
+      "name": "Schneider Electric Clips TC 8-12 45mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500226",
+          "name": "Schneider Electric Clips TC 8-12 45mm Vit (100st)",
+          "gtin": "7315882041281",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 100,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500261": {
+      "name": "Schneider Electric Clips TC 10-14 30mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500261",
+          "name": "Schneider Electric Clips TC 10-14 30mm Vit (100st)",
+          "gtin": "7315882042011",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 100,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500291": {
+      "name": "Schneider Electric Clips TC 10-14 35mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500291",
+          "name": "Schneider Electric Clips TC 10-14 35mm Vit (100st)",
+          "gtin": "7315882043018",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 140,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500306": {
+      "name": "Schneider Electric Clips TC 10-14 30mm Svart (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500306",
+          "name": "Schneider Electric Clips TC 10-14 30mm Svart (100st)",
+          "gtin": "7315882042042",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 116,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500316": {
+      "name": "Schneider Electric Clips TC 10-14 45mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500316",
+          "name": "Schneider Electric Clips TC 10-14 45mm Vit (100st)",
+          "gtin": "7315882045012",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 143.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500321": {
+      "name": "Schneider Electric Clips TC 14-20 35mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500321",
+          "name": "Schneider Electric Clips TC 14-20 35mm Vit (100st)",
+          "gtin": "7315882052010",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 151.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500336": {
+      "name": "Schneider Electric Clips TC 14-20 45mm Svart (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500336",
+          "name": "Schneider Electric Clips TC 14-20 45mm Svart (100st)",
+          "gtin": "7315882052058",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 175.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500351": {
+      "name": "Schneider Electric Clips TC 14-20 45mm Vit (100st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500351",
+          "name": "Schneider Electric Clips TC 14-20 45mm Vit (100st)",
+          "gtin": "7315882053017",
+          "unit": "frp",
+          "packageSize": 100,
+          "priceExVat": 180,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500381": {
+      "name": "Schneider Electric Clips TC 18-22 45mm Vit (50st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500381",
+          "name": "Schneider Electric Clips TC 18-22 45mm Vit (50st)",
+          "gtin": "7315882060008",
+          "unit": "frp",
+          "packageSize": 50,
+          "priceExVat": 116,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500396": {
+      "name": "Schneider Electric Clips TC 18-22 45mm Svart (50st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500396",
+          "name": "Schneider Electric Clips TC 18-22 45mm Svart (50st)",
+          "gtin": "7315882060138",
+          "unit": "frp",
+          "packageSize": 50,
+          "priceExVat": 127.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500426": {
+      "name": "Schneider Electric Clips TC 18-22 55mm Svart (50st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500426",
+          "name": "Schneider Electric Clips TC 18-22 55mm Svart (50st)",
+          "gtin": "7315882060145",
+          "unit": "frp",
+          "packageSize": 50,
+          "priceExVat": 140,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500441": {
+      "name": "Schneider Electric Clips TC 22-26 45mm Vit (50st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500441",
+          "name": "Schneider Electric Clips TC 22-26 45mm Vit (50st)",
+          "gtin": "7315882070007",
+          "unit": "frp",
+          "packageSize": 50,
+          "priceExVat": 159.2,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "1500456": {
+      "name": "Schneider Electric Clips TC 22-26 45mm Svart (50st)",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "1500456",
+          "name": "Schneider Electric Clips TC 22-26 45mm Svart (50st)",
+          "gtin": "7315882070137",
+          "unit": "frp",
+          "packageSize": 50,
+          "priceExVat": 180,
+          "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106073": {
+      "name": "Hager Dvärgbrytare C 20A MCS120W 1-pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106073",
+          "name": "Hager Dvärgbrytare C 20A MCS120W 1-pol Quick Connect",
+          "gtin": "3250610001356",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 175.2,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106099": {
+      "name": "Dvärgbrytare C 20A MCS320 3pol Quick Connect 6kA",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106099",
+          "name": "Dvärgbrytare C 20A MCS320 3pol Quick Connect 6kA",
+          "gtin": "3250610001363",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 703.2,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106500": {
+      "name": "Dvärgbrytare-C 6A MCS106 1pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106500",
+          "name": "Dvärgbrytare-C 6A MCS106 1pol Quick Connect",
+          "gtin": "3250614315152",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 135.2,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106502": {
+      "name": "Dvärgbrytare-C 10A MCS110 1pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106502",
+          "name": "Dvärgbrytare-C 10A MCS110 1pol Quick Connect",
+          "gtin": "3250614315169",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 52.8,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106504": {
+      "name": "Dvärgbrytare-C 13A MCS113 1pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106504",
+          "name": "Dvärgbrytare-C 13A MCS113 1pol Quick Connect",
+          "gtin": "3250614315176",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 61.6,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106506": {
+      "name": "Dvärgbrytare-C 16A MCS116 1pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106506",
+          "name": "Dvärgbrytare-C 16A MCS116 1pol Quick Connect",
+          "gtin": "3250614315183",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 55.2,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106508": {
+      "name": "Dvärgbrytare-C 20A MCS120 1pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106508",
+          "name": "Dvärgbrytare-C 20A MCS120 1pol Quick Connect",
+          "gtin": "3250614315190",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 123.2,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106510": {
+      "name": "Dvärgbrytare-C 25A MCS125 1pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106510",
+          "name": "Dvärgbrytare-C 25A MCS125 1pol Quick Connect",
+          "gtin": "3250614315206",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 164,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106512": {
+      "name": "Dvärgbrytare-C 32A MCS132 1pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106512",
+          "name": "Dvärgbrytare-C 32A MCS132 1pol Quick Connect",
+          "gtin": "3250614315213",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 185.6,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106540": {
+      "name": "Dvärgbrytare-C 6A MCS306 3pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106540",
+          "name": "Dvärgbrytare-C 6A MCS306 3pol Quick Connect",
+          "gtin": "3250614315305",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 796,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106542": {
+      "name": "Dvärgbrytare-C 10A MCS310 3pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106542",
+          "name": "Dvärgbrytare-C 10A MCS310 3pol Quick Connect",
+          "gtin": "3250614315312",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 316,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106544": {
+      "name": "Dvärgbrytare-C 13A MCS313 3pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106544",
+          "name": "Dvärgbrytare-C 13A MCS313 3pol Quick Connect",
+          "gtin": "3250614315329",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 335.2,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106546": {
+      "name": "Dvärgbrytare-C 16A MCS316 3pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106546",
+          "name": "Dvärgbrytare-C 16A MCS316 3pol Quick Connect",
+          "gtin": "3250614315336",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 308,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106550": {
+      "name": "Dvärgbrytare-C 25A MCS325 3pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106550",
+          "name": "Dvärgbrytare-C 25A MCS325 3pol Quick Connect",
+          "gtin": "3250614315350",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 594.4,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    },
+    "2106552": {
+      "name": "Dvärgbrytare-C 32A MCS332 3pol Quick Connect",
+      "offers": {
+        "Elbutiken": {
+          "eNr": "2106552",
+          "name": "Dvärgbrytare-C 32A MCS332 3pol Quick Connect",
+          "gtin": "3250614315367",
+          "unit": "st",
+          "packageSize": 1,
+          "priceExVat": 689.6,
+          "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+          "checkedAt": "2026-10-07T18:35:36.660Z"
+        }
+      }
+    }
+  },
+  "checks": [
+    {
+      "store": "Elbutiken",
+      "url": "https://www.elbutik.se/product.html/abb-kopplingsdosa-ap10-ip65-matt104x104mm",
+      "count": 1,
+      "ok": true
+    },
+    {
+      "store": "Elbutiken",
+      "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+      "count": 15,
+      "ok": true
+    },
+    {
+      "store": "Elbutiken",
+      "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+      "count": 26,
+      "ok": true
+    },
+    {
+      "store": "Bauhaus",
+      "url": "https://www.bauhaus.se/kabelklammer-schneider-electric-8-12mm-rund-100-pack",
+      "count": 1,
+      "ok": true
+    },
+    {
+      "store": "Hornbach",
+      "url": "https://www.hornbach.se/p/kopplingsdosa-abb-ap10-ip65-104x104mm-vit-1438402/6644358/",
+      "ok": false,
+      "error": "No exact price offers found"
+    }
+  ]
+}

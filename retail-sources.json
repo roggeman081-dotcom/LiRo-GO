@@ -1,0 +1,38 @@
+[
+  {
+    "store": "Elbutiken",
+    "url": "https://www.elbutik.se/product.html/abb-kopplingsdosa-ap10-ip65-matt104x104mm",
+    "parser": "elbutik",
+    "unit": "st"
+  },
+  {
+    "store": "Elbutiken",
+    "url": "https://www.elbutik.se/product.html/dvargbrytare-med-c-karakteristik-och-snabbanslutning-quick-connect",
+    "parser": "elbutik",
+    "unit": "st"
+  },
+  {
+    "store": "Elbutiken",
+    "url": "https://www.elbutik.se/product.html/schneider-tc-clips",
+    "parser": "elbutik",
+    "unit": "frp"
+  },
+  {
+    "store": "Bauhaus",
+    "url": "https://www.bauhaus.se/kabelklammer-schneider-electric-8-12mm-rund-100-pack",
+    "parser": "bauhaus",
+    "unit": "frp",
+    "eNr": "1500196",
+    "gtin": "7315882041205",
+    "packageSize": 100
+  },
+  {
+    "store": "Hornbach",
+    "url": "https://www.hornbach.se/p/kopplingsdosa-abb-ap10-ip65-104x104mm-vit-1438402/6644358/",
+    "parser": "schema",
+    "unit": "st",
+    "eNr": "1438402",
+    "gtin": "6410016125101",
+    "packageSize": 1
+  }
+]

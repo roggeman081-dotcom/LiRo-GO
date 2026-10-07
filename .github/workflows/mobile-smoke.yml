@@ -144,6 +144,7 @@ jobs:
 
             // 1) Testa den riktiga installerade/PWA-liknande appen med service worker och tilläggslagren.
             const pwaContext = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+            await pwaContext.addInitScript(()=>{window.LIRO_RETAIL_FEED_URL='./retail-prices.json';});
             const pwa = await pwaContext.newPage();
             const pwaErrors = [];
             pwa.on('pageerror', e => pwaErrors.push('pageerror: ' + e.message));
@@ -205,6 +206,7 @@ jobs:
             // 2) Testa kärnflödet utan service worker. Det isolerar formulär/business logic
             // från startsidans asynkrona widget-renderingar och testar samma WebKit-motor som iPhone.
             const coreContext = await browser.newContext({ ...devices['iPhone 15 Pro'], serviceWorkers:'block' });
+            await coreContext.addInitScript(()=>{window.LIRO_RETAIL_FEED_URL='./retail-prices.json';});
             const page = await coreContext.newPage();
             const errors = [];
             page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -530,5 +532,9 @@ jobs:
       - name: Verify retail price comparison on mobile and desktop
         run: node tests/retail-comparison.cjs
 
+      - name: Verify exact retailer price parsing
+        run: node tests/retail-parser.mjs
+
       - name: Verify stable barcode reading and exact article matching
         run: node tests/barcode-scanner.cjs
+
