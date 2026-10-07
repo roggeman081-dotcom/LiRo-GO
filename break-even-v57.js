@@ -33,6 +33,7 @@
   let materialsV57=null;
   let loadingV57=false;
   let materialsDirtyV57=true;
+  window.addEventListener('liro-material-prices-changed',()=>{materialsDirtyV57=true;});
 
   function targetV57(){
     const n=Number(localStorage.getItem(STORE));

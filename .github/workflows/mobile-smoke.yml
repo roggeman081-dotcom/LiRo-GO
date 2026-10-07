@@ -536,7 +536,9 @@ jobs:
         run: node tests/retail-parser.mjs
 
       - name: Verify general markup and individual material prices
-        run: node tests/material-markup.cjs
+        run: |
+          node tests/material-markup-calculation.cjs
+          node tests/material-markup.cjs
 
       - name: Verify stable barcode reading and exact article matching
         run: node tests/barcode-scanner.cjs

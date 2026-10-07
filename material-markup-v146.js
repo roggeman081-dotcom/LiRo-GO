@@ -4,12 +4,17 @@
   const css=document.createElement('style');
   css.textContent='.material-price-dialog{box-sizing:border-box;width:calc(100% - 32px);max-width:440px;max-height:85dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--text)}.material-price-dialog::backdrop{background:#0006}.material-price-dialog input,.material-price-dialog select,.material-price-dialog button{font-size:16px;min-height:44px}.material-price-dialog footer{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}';
   document.head.append(css);
-  function invalidate(){window.statsDirtyV44=true;window.materialsDirtyV57=true;}
+  function invalidate(){window.dispatchEvent(new Event('liro-material-prices-changed'));}
   async function applyGeneral(percent){
     if(!Number.isFinite(percent)||percent<0)throw new Error('Ange ett påslag på minst 0 %.');
     const all=await dbAll('jobs'),now=new Date().toISOString();
     const changed=all.filter(j=>!['done','invoice_ready','invoiced'].includes(j.status));
-    for(const j of changed){j.markupPercent=percent;j.updatedAt=now;await dbPut('jobs',j);}
+    for(const j of changed){j.markupPercent=percent;j.updatedAt=now;}
+    await new Promise((resolve,reject)=>{
+      const tx=DB.transaction('jobs','readwrite');
+      for(const j of changed)tx.objectStore('jobs').put(j);
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+    });
     setGlobalPriceDefaults({...getGlobalPriceDefaults(),markupPercent:percent});
     for(const j of jobs){const saved=changed.find(x=>x.id===j.id);if(saved)Object.assign(j,saved);}
     invalidate();

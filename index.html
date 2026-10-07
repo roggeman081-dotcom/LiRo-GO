@@ -2861,6 +2861,7 @@ function vJobMaterial(job){
         <div class="material-sub">${[m.eNr?('E-nr '+esc(m.eNr)):'', esc(m.qty)+' '+esc(m.unit)].filter(Boolean).join(' · ')}</div>
       </div>
       <button class="accent" style="font-size:12px;font-weight:600;flex:0 0 auto" data-act="move-material-to-used" data-id="${m.id}">Flytta till Använt</button>
+      <button type="button" data-act="edit-material-selling" data-id="${m.id}" style="min-height:44px">Ändra pris</button>
       <button class="material-del" data-act="delete-material" data-id="${m.id}">${ICON.trash}</button>
     </div>`).join('');
 

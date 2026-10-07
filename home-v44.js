@@ -40,6 +40,7 @@
   let allMaterialsV44=null;
   let statsLoadingV44=false;
   let statsDirtyV44=true;
+  window.addEventListener('liro-material-prices-changed',()=>{statsDirtyV44=true;});
   let calendarAutoTryV89=0;
   let calendarAutoSyncingV89=false;
 
