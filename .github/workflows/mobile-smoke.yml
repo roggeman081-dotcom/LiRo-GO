@@ -144,6 +144,7 @@ jobs:
 
             // 1) Testa den riktiga installerade/PWA-liknande appen med service worker och tilläggslagren.
             const pwaContext = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+            await pwaContext.route('https://raw.githubusercontent.com/roggeman081-dotcom/LiRo-GO/main/retail-prices.json',r=>r.fulfill({path:'retail-prices.json',contentType:'application/json'}));
             const pwa = await pwaContext.newPage();
             const pwaErrors = [];
             pwa.on('pageerror', e => pwaErrors.push('pageerror: ' + e.message));
@@ -205,6 +206,7 @@ jobs:
             // 2) Testa kärnflödet utan service worker. Det isolerar formulär/business logic
             // från startsidans asynkrona widget-renderingar och testar samma WebKit-motor som iPhone.
             const coreContext = await browser.newContext({ ...devices['iPhone 15 Pro'], serviceWorkers:'block' });
+            await coreContext.route('https://raw.githubusercontent.com/roggeman081-dotcom/LiRo-GO/main/retail-prices.json',r=>r.fulfill({path:'retail-prices.json',contentType:'application/json'}));
             const page = await coreContext.newPage();
             const errors = [];
             page.on('pageerror', e => errors.push('pageerror: ' + e.message));
