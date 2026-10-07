@@ -39,5 +39,22 @@ vm.runInContext(source.replace('  openBarcodeScanner=async function(){','  windo
   await nextFrame(1600);
   assert.equal(closed,1,'Stable known article closes scanner once');
   assert.equal(context.st.matSearch,'1500136');
+  // EAN lookup must coexist with exact matching and the confirmation step.
+  let confirmations=0;
+  context.window.LiRoBarcodeLookup={
+    normalizeGtin:code=>code==='7312345678901'?'07312345678901':null,
+    resolve:async()=>({eNumber:'1500136',gtin:'07312345678901'}),
+    confirmMaterial:async row=>{assert.equal(row[0],'1500136');confirmations++;}
+  };
+  assert.equal((await context.window.resolveBarcodeV110('7312345678901')).code,'1500136');
+  context.st.scannerOpen=true;
+  assert.equal(await context.window.applyBarcodeV96('7312345678901',true),true);
+  assert.equal(confirmations,1,'Known EAN opens material confirmation');
+  context.st.scannerOpen=true;
+  context.window.LiRoBarcodeLookup.resolve=async()=>{throw new Error('Lookup unavailable');};
+  const closedBeforeFailure=closed;
+  assert.equal(await context.window.applyBarcodeV96('7312345678901',true),false);
+  assert.equal(closed,closedBeforeFailure,'Lookup failure keeps camera open');
+  assert.equal(message,'Lookup unavailable');
   console.log('Scanner regression OK: stable reads, unknown codes, exact match, QR article and leading zero');
 })().catch(error=>{console.error(error);process.exitCode=1;});
