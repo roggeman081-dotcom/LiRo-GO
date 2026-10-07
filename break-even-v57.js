@@ -33,6 +33,7 @@
   let materialsV57=null;
   let loadingV57=false;
   let materialsDirtyV57=true;
+  window.addEventListener('liro-material-prices-changed',()=>{materialsDirtyV57=true;});
 
   function targetV57(){
     const n=Number(localStorage.getItem(STORE));
@@ -91,7 +92,7 @@
       if(!job||job.isQuote) continue;
       const markup=Math.max(0,toNumber(job.markupPercent,15))/100;
       const cost=Math.max(0,toNumber(m.qty,0))*Math.max(0,toNumber(m.unitPrice,0));
-      total+=cost*markup;
+      total+=calculateMaterialTotals([m],job.markupPercent).markupSum;
     }
     return total;
   }
@@ -192,3 +193,4 @@
     if(materialActs.has(b.dataset.act)) materialsDirtyV57=true;
   },true);
 })();
+

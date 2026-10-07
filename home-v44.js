@@ -40,6 +40,7 @@
   let allMaterialsV44=null;
   let statsLoadingV44=false;
   let statsDirtyV44=true;
+  window.addEventListener('liro-material-prices-changed',()=>{statsDirtyV44=true;});
   let calendarAutoTryV89=0;
   let calendarAutoSyncingV89=false;
 
@@ -113,7 +114,7 @@
       const when=new Date(m.updatedAt||m.createdAt||0); const bucket=map.get(when.toDateString()); if(!bucket) continue;
       const job=jobById(m.jobId); const markup=Math.max(0,toNumber(job?.markupPercent,15))/100;
       const cost=Math.max(0,toNumber(m.qty,0))*Math.max(0,toNumber(m.unitPrice,0));
-      const profit=cost*markup;
+      const profit=calculateMaterialTotals([m],job?.markupPercent).markupSum;
       bucket.cost+=cost; bucket.profit+=profit; bucket.revenue+=cost+profit;
     }
     const total=days.reduce((s,d)=>({profit:s.profit+d.profit,cost:s.cost+d.cost,revenue:s.revenue+d.revenue}),{profit:0,cost:0,revenue:0});
@@ -400,3 +401,4 @@
     if(materialActs.has(b.dataset.act)) statsDirtyV44=true;
   },true);
 })();
+

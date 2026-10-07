@@ -123,7 +123,7 @@
       if(!job||job.isQuote) continue;
       const cost=Math.max(0,Number(m.qty)||0)*Math.max(0,Number(m.unitPrice)||0);
       const markup=Math.max(0,Number(job.markupPercent)||0)/100;
-      const profit=cost*markup,revenue=cost+profit;
+      const revenue=calculateMaterialTotals([m],job.markupPercent).total,profit=revenue-cost;
       materialCost+=cost; materialProfit+=profit; materialRevenue+=revenue;
       const p=projectMap.get(job.id)||{job,labor:0,material:0,total:0};
       p.material+=revenue;p.total+=revenue;projectMap.set(job.id,p);
@@ -186,7 +186,7 @@
         if(!m||m.kind==='planned'||!inRange(m.createdAt||m.updatedAt,b.start,b.end)) continue;
         const job=typeof jobById==='function'?jobById(m.jobId):null;if(!job||job.isQuote) continue;
         const cost=Math.max(0,Number(m.qty)||0)*Math.max(0,Number(m.unitPrice)||0);
-        b.value+=cost*(1+Math.max(0,Number(job.markupPercent)||0)/100);
+        b.value+=calculateMaterialTotals([m],job.markupPercent).total;
       }
     }
     return buckets;

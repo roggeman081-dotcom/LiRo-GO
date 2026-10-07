@@ -65,8 +65,8 @@
     return usedMats(job).map(m=>{
       const qty=Math.max(0,toNumber(m.qty,0));
       const buy=Math.max(0,toNumber(m.unitPrice,0));
-      const sell=buy*(1+markup);
-      return {Artikelnummer:clean(m.eNr||''),Material:clean(m.name||m.description||'Material'),Antal:qty,Enhet:clean(m.unit||'st'),'Inköpspris/st':buy,'Påslag %':markup*100,'Kundpris/st':sell,'Inköp totalt':buy*qty,'Försäljning totalt':sell*qty,Materialvinst:(sell-buy)*qty};
+      const sell=materialSellingUnitPrice(m,job.markupPercent);
+      return {Artikelnummer:clean(m.eNr||''),Material:clean(m.name||m.description||'Material'),Antal:qty,Enhet:clean(m.unit||'st'),'Inköpspris/st':buy,'Påslag %':buy>0?(sell/buy-1)*100:null,'Kundpris/st':sell,'Inköp totalt':buy*qty,'Försäljning totalt':sell*qty,Materialvinst:(sell-buy)*qty};
     });
   }
   function makePdf(job){
