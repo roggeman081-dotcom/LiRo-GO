@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {parsePage} from '../scripts/update-retail-prices.mjs';
+const source={parser:'elbutik',unit:'frp'};
+const html=price=>`<span itemprop="offers"><meta itemprop="priceCurrency" content="SEK"><meta itemprop="name" content="TC clips (100st)"><meta itemprop="sku" content="1500196"><meta itemprop="price" content="${price}">79,20 kr exkl. moms<!-- END responsive/variant/variant-price.htm --><span id="barcode_1">7315882041205</span>`;
+assert.deepEqual(parsePage(html(99),source)[0],{eNr:'1500196',name:'TC clips (100st)',gtin:'7315882041205',unit:'frp',packageSize:100,priceExVat:79.2});
+assert.throws(()=>parsePage(html(109),source),/No exact/,'VAT mismatch rejected');
+assert.throws(()=>parsePage(html(99).replace('SEK','EUR'),source),/No exact/);
+assert.throws(()=>parsePage(html(99).replace('(100st)',''),source),/No exact/);
+const bauhaus={parser:'bauhaus',eNr:'1500196',gtin:'7315882041205',unit:'frp',packageSize:100};
+const bh='<meta itemprop="gtin" content="7315882041205"><div data-price-amount="89" data-price-type="finalPrice"></div>"amountperpackage":"100"';
+assert.equal(parsePage(bh,bauhaus)[0].priceExVat,71.2);
+assert.throws(()=>parsePage(bh,{...bauhaus,gtin:'6418677309816'}),/Exact GTIN/);
+assert.throws(()=>parsePage(bh,{...bauhaus,packageSize:50}),/Package size/);
+assert.throws(()=>parsePage('<html>Unavailable</html>',{parser:'schema'}),/No exact/);
+console.log('Retail parser OK: exact identity, package size, currency and VAT');

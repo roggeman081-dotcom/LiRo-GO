@@ -530,5 +530,9 @@ jobs:
       - name: Verify retail price comparison on mobile and desktop
         run: node tests/retail-comparison.cjs
 
+      - name: Verify exact retailer price parsing
+        run: node tests/retail-parser.mjs
+
       - name: Verify stable barcode reading and exact article matching
         run: node tests/barcode-scanner.cjs
+
