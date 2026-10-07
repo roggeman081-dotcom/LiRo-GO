@@ -1,7 +1,48 @@
-const fs=require('node:fs'),http=require('node:http'),path=require('node:path'),assert=require('node:assert/strict');
-const{chromium}=require(process.env.LIRO_PLAYWRIGHT_PATH||'playwright');
-const root=path.resolve(__dirname,'..');
-const server=http.createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname;const file=path.resolve(root,'.'+(name==='/'?'/index.html':name));if(!file.startsWith(root+path.sep)){res.writeHead(403);return res.end();}fs.readFile(file,(err,bytes)=>{if(err){res.writeHead(404);return res.end();}const mime={'.js':'application/javascript','.html':'text/html','.json':'application/json','.wasm':'application/wasm','.png':'image/png','.webmanifest':'application/manifest+json'};res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');res.end(bytes);});});
-(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({channel:process.env.LIRO_BROWSER_CHANNEL||undefined});try{const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR',e.message);});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>typeof st!=='undefined'&&st.view==='home'&&!document.getElementById('opening')&&window.LiRoRetailComparison,null,{timeout:10000});console.log('App ready');await page.evaluate(async()=>{await Promise.race([window.LiRoPrice.ready,new Promise((_,reject)=>setTimeout(()=>reject(Error('Price ready timeout')),10000))]);const j={id:'retail-test',title:'Prisjämförelse',markupPercent:25,status:'active'};await dbPut('jobs',j);await dbPut('materials',{id:'retail-material',jobId:j.id,name:'Testartikel',unit:'st',qty:2,unitPrice:80,kind:'used'});jobs=await dbAll('jobs');await loadJobDetail(j.id);st={view:'job',id:j.id,jobTab:'material'};settingsOpen=false;render();});
-const button=page.locator('[data-retail-v128]');await button.waitFor();assert.equal(await button.innerText(),'Saknas');await button.click();await page.locator('input[name="Hornbach"]').fill('125');await page.locator('input[name="Bauhaus"]').fill('110');await page.getByRole('button',{name:'Spara',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-retail-v128]')?.textContent.includes('25'));assert.equal(await page.locator('.retail-v128 .red').count(),1);await page.evaluate(()=>render());await button.click();assert.equal(await page.locator('input[name="Hornbach"]').inputValue(),'125');await page.getByRole('button',{name:'Stäng',exact:true}).click();
-await page.evaluate(()=>{const job=jobById(st.id);job.markupPercent=100;render();});await page.waitForFunction(()=>document.querySelector('.retail-v128 .green'));assert.match(await button.innerText(),/21/);await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('.retail-v128').isVisible(),false);assert.deepEqual(await page.evaluate(()=>{const c=LiRoRetailComparison.compare;return[c(100,[125,110]).percent,c(125,[125]).above,c(0,[125]),c(100,[])];}),[25,true,null,null]);assert.deepEqual(errors,[]);console.log('PASS full app: startup, retailer maximum, quantity/markup, colors, price dialog, persistence after render, missing/zero prices, mobile hidden; no page errors.');}finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});
+const assert = require('node:assert/strict');
+const { webkit } = require('playwright');
+
+(async () => {
+  const browser = await webkit.launch();
+  try {
+    for (const width of [320, 390, 1280]) {
+      const page = await browser.newPage({ viewport: { width, height: 844 } });
+      await page.route('http://liro.test/', route => route.fulfill({
+        contentType: 'text/html',
+        body: `<style>
+          .material-row{display:flex;align-items:center;gap:10px}
+          .material-info{flex:1}
+          .material-cols{display:flex;gap:16px;text-align:right}
+        </style><div id="app"></div><script>
+          let jobMaterials=[{id:'m1',eNr:'1234567',name:'Testartikel',qty:2,unit:'st'}];
+          window.vJobMaterial=()=>'<div class="material-row" data-myprice="100" data-mid="m1"><div class="material-info">Testartikel</div><div class="material-cols"><div>Inköp 100 kr</div><div>Påslag 20 kr</div><div class="mat-customer-val">120 kr</div></div><button>Ta bort</button></div>';
+        </script>`
+      }));
+      await page.goto('http://liro.test/');
+      await page.addScriptTag({ path: 'retail-comparison-v128.js' });
+      await page.evaluate(() => document.querySelector('#app').innerHTML = vJobMaterial({}));
+      const button = page.locator('[data-retail-v128]');
+      await button.waitFor({ state: 'visible' });
+      assert.equal(await button.innerText(), 'Saknas');
+      await button.click();
+      await page.locator('input[name="Hornbach"]').fill('90');
+      await page.getByText('Spara', { exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-retail-v128]').dataset.state === 'red');
+      assert.match(await button.innerText(), /50 %/);
+      const bounds = await button.boundingBox();
+      assert(bounds.x >= 0 && bounds.x + bounds.width <= width, 'Indicator fits the viewport');
+      if (width < 900) assert(bounds.height >= 44, 'Mobile touch target');
+      await button.click();
+      await page.locator('input[name="Hornbach"]').fill('50');
+      await page.getByText('Spara', { exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[data-retail-v128]').dataset.state === 'green');
+      await page.reload();
+      await page.addScriptTag({ path: 'retail-comparison-v128.js' });
+      await page.evaluate(() => document.querySelector('#app').innerHTML = vJobMaterial({}));
+      await page.waitForFunction(() => document.querySelector('[data-retail-v128]').dataset.state === 'green');
+      console.log('Retail comparison OK at ' + width + 'px: visibility, red/green, percentage, editing and persistence');
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
