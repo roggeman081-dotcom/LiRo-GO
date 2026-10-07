@@ -167,7 +167,7 @@
     const base=(Math.max(0,toNumber(m.qty,0))*Math.max(0,toNumber(m.unitPrice,0)));
     const customer=base*(1+pct/100);
     const customerEl=row.querySelector('.mat-customer-val');
-    if(customerEl) customerEl.textContent=fmtKr(customer);
+    if(customerEl && customerEl.textContent!==fmtKr(customer)) customerEl.textContent=fmtKr(customer);
 
     const markupVal=row.querySelector('.mat-markup-val');
     const col=markupVal?.parentElement;
