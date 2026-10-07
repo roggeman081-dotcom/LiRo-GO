@@ -1,4 +1,4 @@
-/* Desktop comparison; retailer prices are entered per unit excluding VAT. */
+/* Mobile and desktop comparison; retailer prices are entered per unit excluding VAT. */
 (function(){
   'use strict';
   const stores=['Hornbach','Bauhaus','Elbutiken'];
@@ -13,7 +13,7 @@
   window.LiRoRetailComparison={compare};
   function load(){try{return JSON.parse(localStorage.getItem(storageKey)||'{}');}catch{return {};}}
   const style=document.createElement('style');
-  style.textContent='.retail-v128{display:none}@media(min-width:900px){.retail-v128{display:block;min-width:110px}.retail-v128 button{font:inherit;cursor:pointer;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:7px 9px;white-space:nowrap}.retail-v128 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#777}.retail-v128 .red{background:#c33636}.retail-v128 .green{background:#248547}}.retail-dialog-v128{max-width:440px;width:calc(100% - 48px);border:1px solid #aaa;border-radius:16px;padding:24px}.retail-dialog-v128::backdrop{background:#0006}.retail-dialog-v128 label{display:grid;grid-template-columns:1fr 130px;align-items:center;gap:12px;margin:12px 0}.retail-dialog-v128 input{width:100%;box-sizing:border-box}.retail-dialog-v128 footer{display:flex;justify-content:flex-end;gap:12px;margin-top:20px}';
+  style.textContent='.retail-v128{display:block;min-width:110px}.retail-v128 button{font:inherit;cursor:pointer;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:7px 9px;white-space:nowrap}.retail-v128 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#777}.retail-v128 .red{background:#c33636}.retail-v128 .green{background:#248547}@media(max-width:899px){.material-row[data-myprice]{flex-wrap:wrap}.material-row[data-myprice] .material-info{flex:1 1 calc(100% - 44px);min-width:0}.material-row[data-myprice] .material-cols{order:2;flex:1 1 100%;flex-wrap:wrap;justify-content:space-between;gap:12px;text-align:left}.retail-v128 button{min-height:44px;min-width:110px}.retail-dialog-v128{box-sizing:border-box;max-height:85dvh;overflow:auto;padding:20px}.retail-dialog-v128 input{font-size:16px;min-height:44px}.retail-dialog-v128 footer button{min-height:44px}}.retail-dialog-v128{max-width:440px;width:calc(100% - 48px);border:1px solid #aaa;border-radius:16px;padding:24px}.retail-dialog-v128::backdrop{background:#0006}.retail-dialog-v128 label{display:grid;grid-template-columns:1fr 130px;align-items:center;gap:12px;margin:12px 0}.retail-dialog-v128 input{width:100%;box-sizing:border-box}.retail-dialog-v128 footer{display:flex;justify-content:flex-end;gap:12px;margin-top:20px}';
   document.head.append(style);
   function refresh(){
     const data=load();

@@ -527,5 +527,8 @@ jobs:
       - name: Verify installed app upgrades without losing prices or customers
         run: node tests/app-update.cjs
 
+      - name: Verify retail price comparison on mobile and desktop
+        run: node tests/retail-comparison.cjs
+
       - name: Verify stable barcode reading and exact article matching
         run: node tests/barcode-scanner.cjs
