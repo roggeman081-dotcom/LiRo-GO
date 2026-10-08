@@ -4,7 +4,13 @@
   const ENDPOINT=window.LIRO_BARCODE_ENDPOINT||'https://lirogo-barcode-lookup.roggeman081.workers.dev';
   const KEY='lirogo_gtin_enumber_v1';
   function normalize(value){
-    const code=String(value||'').trim();
+    const raw=String(value||'').trim();
+    let code=raw.replace(/[\s-]+/g,'');
+    // GS1-128 often exposes the fixed-length GTIN field as AI (01) + 14 digits.
+    // Some scanners return "(01)136..." while iPhone/ZXing commonly returns
+    // the same payload without parentheses, e.g. "0113606481158175".
+    const gs1=code.match(/^\(01\)(\d{14})/)||code.match(/^01(\d{14})/);
+    if(gs1) code=gs1[1];
     if(!/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(code)) return null;
     let sum=0;
     for(let i=code.length-2,w=3;i>=0;i--,w=w===3?1:3) sum+=Number(code[i])*w;
@@ -20,7 +26,7 @@
     if(!navigator.onLine) throw new Error('Den här streckkoden är inte sparad än. Anslut till internet för första uppslaget.');
     if(!ENDPOINT) throw new Error('Streckkodsuppslaget är ännu inte aktiverat. Du kan söka på E-nummer.');
     let response;
-    try{response=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gtin:String(raw)}),signal:AbortSignal.timeout(15000)});}
+    try{response=await fetch(ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gtin}),signal:AbortSignal.timeout(15000)});}
     catch{throw new Error('Kunde inte slå upp streckkoden just nu. Försök igen med internetanslutning.');}
     const result=await response.json().catch(()=>({}));
     if(response.status===409) throw new Error('Streckkoden har flera möjliga artiklar. Välj med E-nummer för att undvika fel material.');
