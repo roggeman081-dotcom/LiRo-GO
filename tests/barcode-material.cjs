@@ -7,10 +7,12 @@ const {webkit,chromium,devices}=require('playwright');
     const context=await browser.newContext({...devices['iPhone 15 Pro'],serviceWorkers:'block'});
     await context.addInitScript(()=>{window.LIRO_BARCODE_ENDPOINT='https://lookup.example.test/functions/v1/barcode-lookup';});
     let requests=0;
+    const postedGtins=[];
     const liveHandler=process.env.LIRO_LIVE_LOOKUP==='1'?(await import('../server/barcode-lookup/handler.mjs')).handleRequest:null;
     await context.route('**/functions/v1/barcode-lookup',async route=>{
       requests++;
       const gtin=route.request().postDataJSON().gtin;
+      postedGtins.push(gtin);
       if(process.env.LIRO_PUBLISHED_LOOKUP_URL){
         const result=await fetch(process.env.LIRO_PUBLISHED_LOOKUP_URL,{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://roggeman081-dotcom.github.io'},body:JSON.stringify({gtin})});
         return route.fulfill({status:result.status,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:await result.text()});
@@ -19,12 +21,13 @@ const {webkit,chromium,devices}=require('playwright');
         const result=await liveHandler(new Request('https://lookup.example.test/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gtin})}));
         return route.fulfill({status:result.status,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:await result.text()});
       }
-      return route.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify({match:gtin==='4012195931669'?{gtin:'04012195931669',eNumber:'0681600'}:null})});
+      return route.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify({match:gtin==='04012195931669'?{gtin:'04012195931669',eNumber:'0681600'}:null})});
     });
     const page=await context.newPage();
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.goto(process.env.LIRO_TEST_URL||'http://127.0.0.1:4173/');
     await page.waitForFunction(()=>st.view==='home');
+    assert.equal(await page.evaluate(()=>LiRoBarcodeLookup.normalizeGtin('0113606481158175')),'13606481158175');
     const priceData=process.env.LIRO_PRIVATE_PRICE_FILE?JSON.parse(fs.readFileSync(process.env.LIRO_PRIVATE_PRICE_FILE,'utf8')):{format:'lirogo-ahlsell-prices-v1',meta:{priced:1},prices:{'0681600':100}};
     const expectedPrice=Number(priceData.prices['0681600']);
     assert(Number.isFinite(expectedPrice)&&expectedPrice>0,'Test article must have a valid contract price');
@@ -46,6 +49,7 @@ const {webkit,chromium,devices}=require('playwright');
     let materials=await page.evaluate(()=>dbAll('materials'));
     assert.equal(materials.length,1);assert.equal(materials[0].jobId,jobId);
     assert.equal(materials[0].eNr,'0681600');assert.equal(materials[0].qty,0.5);assert.equal(materials[0].unitPrice,expectedPrice);
+    assert.deepEqual(postedGtins,['04012195931669'],'Frontend must send canonical GTIN to lookup endpoint');
     await context.setOffline(true);
     assert(await page.evaluate(()=>{st.scannerOpen=true;pushNav();return applyBarcodeV96('4012195931669');}));
     await dialog.waitFor();await page.getByRole('button',{name:'Lägg till på uppdraget'}).click();
@@ -57,6 +61,6 @@ const {webkit,chromium,devices}=require('playwright');
     assert.equal((await page.evaluate(()=>dbAll('materials'))).length,1);
     assert.deepEqual(errors,[]);
     await context.close();
-    console.log(JSON.stringify({ok:true,livePublicRegister:!!liveHandler,priceSource:process.env.LIRO_PRIVATE_PRICE_FILE?'private contract file':'isolated test price',cameraCaptureTested:false,gtinToEnumber:true,correctJob:true,decimalQuantity:true,contractPrice:true,offlineCachedLookup:true,unknownBarcodeNotAdded:true}));
+    console.log(JSON.stringify({ok:true,livePublicRegister:!!liveHandler,priceSource:process.env.LIRO_PRIVATE_PRICE_FILE?'private contract file':'isolated test price',cameraCaptureTested:false,gtinToEnumber:true,gs1Ai01:true,canonicalLookupRequest:true,correctJob:true,decimalQuantity:true,contractPrice:true,offlineCachedLookup:true,unknownBarcodeNotAdded:true}));
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
