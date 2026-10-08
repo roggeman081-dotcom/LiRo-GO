@@ -3,6 +3,8 @@ import {lookupGtin,normalizeGtin,verifyProduct} from '../server/barcode-lookup/l
 const gtin='4012195931669',canonical='04012195931669',number='0681600';
 assert.equal(normalizeGtin(gtin),canonical);
 assert.equal(normalizeGtin(canonical),canonical);
+assert.equal(normalizeGtin('0113606481158175'),'13606481158175');
+assert.equal(normalizeGtin('(01)13606481158175'),'13606481158175');
 assert.equal(normalizeGtin('4012195931668'),null);
 assert.equal(normalizeGtin('../admin'),null);
 const html=n=>`<button data-copy-value="${n}"></button><table><tr><th>GTIN</th><td>${gtin}</td></tr></table>`;
@@ -24,5 +26,5 @@ assert.equal(await lookupGtin(gtin,wrongGtin),null,'A search result must not be 
 if(process.env.LIRO_LIVE_LOOKUP==='1'){
   const live=await lookupGtin(gtin);assert.equal(live.eNumber,number);console.log('Live public GTIN lookup verified:',live.eNumber);
 }
-console.log('Barcode lookup: checksum, exact GTIN, exact E-number, ambiguity and upstream failure passed');
+console.log('Barcode lookup: checksum, GS1 AI 01, exact GTIN, exact E-number, ambiguity and upstream failure passed');
 
