@@ -2,7 +2,7 @@
 (function(){
   'use strict';
   const css=document.createElement('style');
-  css.textContent='.material-price-dialog{box-sizing:border-box;width:calc(100% - 32px);max-width:440px;max-height:85dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--text)}.material-price-dialog::backdrop{background:#0006}.material-price-dialog input,.material-price-dialog select,.material-price-dialog button{font-size:16px;min-height:44px}.material-price-dialog footer{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}';
+  css.textContent='.material-price-dialog{box-sizing:border-box;width:calc(100% - 32px);max-width:440px;max-height:85dvh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--text)}.material-price-dialog::backdrop{background:#0006}.material-price-dialog input,.material-price-dialog select,.material-price-dialog button{font-size:16px;min-height:44px}.material-price-dialog footer{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}html,body{max-width:100%;overflow-x:hidden}#app,.mat-panel{width:100%;max-width:520px;overflow-x:hidden}.mat-panel-head,.mat-panel-list,.snabbval{width:100%;min-width:0}.snabbval.cols4{grid-template-columns:repeat(4,minmax(0,1fr))}.snabbval button{min-width:0;overflow:hidden}.snabbval button span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}';
   document.head.append(css);
   function invalidate(){window.dispatchEvent(new Event('liro-material-prices-changed'));}
   async function applyGeneral(percent){
