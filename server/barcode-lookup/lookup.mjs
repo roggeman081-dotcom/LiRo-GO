@@ -1,7 +1,10 @@
 // Public, on-demand product lookups. Never download or enumerate the register.
 const SITE='https://www.e-nummersok.se';
 export function normalizeGtin(value){
-  const digits=String(value||'').trim();
+  const raw=String(value||'').trim();
+  let digits=raw.replace(/[\s-]+/g,'');
+  const gs1=digits.match(/^\(01\)(\d{14})/)||digits.match(/^01(\d{14})/);
+  if(gs1) digits=gs1[1];
   if(!/^(?:\d{8}|\d{12}|\d{13}|\d{14})$/.test(digits)) return null;
   let sum=0;
   for(let i=digits.length-2,weight=3;i>=0;i--,weight=weight===3?1:3) sum+=Number(digits[i])*weight;
