@@ -2050,6 +2050,7 @@ function vProjects(){
   const all = jobs.slice().sort((a,b)=>(b.plannedAt||'').localeCompare(a.plannedAt||''));
   const filtered = q ? all.filter(j=>{
     const c = customerOf(j);
+    if(typeof jobMatchesSearch==='function') return jobMatchesSearch(j,q);
     return j.title.toLowerCase().includes(q) || (c && c.name.toLowerCase().includes(q));
   }) : all;
 
@@ -2060,7 +2061,7 @@ function vProjects(){
   <div class="px" style="margin-top:14px">
     <div class="field search-wrap flat">
       ${ICON.search}
-      <input type="text" placeholder="Sök projekt eller kund…" value="${esc(st.projectSearch||'')}" data-field="project-search">
+      <input type="text" placeholder="Sök nr, uppdrag eller kund…" value="${esc(st.projectSearch||'')}" data-field="project-search">
     </div>
   </div>
   <div class="px" style="margin-top:10px" id="projectList">${vProjectListInner(filtered, q)}</div>
@@ -3888,7 +3889,8 @@ $app.addEventListener('input', e=>{
     const all = jobs.slice().sort((a,b)=>(b.plannedAt||'').localeCompare(a.plannedAt||''));
     const filtered = q ? all.filter(j=>{
       const c = customerOf(j);
-      return j.title.toLowerCase().includes(q) || (c && c.name.toLowerCase().includes(q));
+      if(typeof jobMatchesSearch==='function') return jobMatchesSearch(j,q);
+    return j.title.toLowerCase().includes(q) || (c && c.name.toLowerCase().includes(q));
     }) : all;
     const box=document.getElementById('projectList'); if(box) box.innerHTML=vProjectListInner(filtered, q);
     return;
@@ -4679,6 +4681,7 @@ if('serviceWorker' in navigator){
 <script src="./desktop-v92.js"></script>\n<script src="./price-engine-v105.js"></script><script src="./price-activation-v126.js"></script>\n<script src="./quickflow-v103.js"></script>
 <script src="./retail-comparison-v128.js"></script>
 <script src="./material-markup-v146.js"></script>
+<script src="./jobnumber-v149.js"></script>
 </body>
 </html>
 

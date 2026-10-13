@@ -85,7 +85,7 @@
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{Material:'Inget registrerat material'}]),'Material');
     const hours=Math.max(0,effectiveLoggedHours(job)),rate=Math.max(0,toNumber(job.hourlyRate,DEFAULT_PRICE_DEFAULTS.hourlyRate)),labor=laborCost(job),travel=travelCost(job),other=Math.max(0,toNumber(job.otherCosts,0));
     const matBuy=rows.reduce((s,r)=>s+r['Inköp totalt'],0),matSell=rows.reduce((s,r)=>s+r['Försäljning totalt'],0),matProfit=rows.reduce((s,r)=>s+r.Materialvinst,0);
-    const summary=[['Uppdrag',clean(job.title)],['Timmar',hours],['Grundtimpris',rate],['Arbete totalt',labor],['Material inköp',matBuy],['Material försäljning',matSell],['Materialvinst',matProfit],['Framkörning/resor',travel],['Övrigt',other],['Fakturaunderlag exkl. moms',labor+matSell+travel+other],['Moms 25 %',(labor+matSell+travel+other)*0.25],['Totalt inkl. moms',(labor+matSell+travel+other)*1.25]];
+    const summary=[['Projektnummer',clean(job.jobNumber||'')],['Beställarens nr',clean(job.clientRef||'')],['Uppdrag',clean(job.title)],['Timmar',hours],['Grundtimpris',rate],['Arbete totalt',labor],['Material inköp',matBuy],['Material försäljning',matSell],['Materialvinst',matProfit],['Framkörning/resor',travel],['Övrigt',other],['Fakturaunderlag exkl. moms',labor+matSell+travel+other],['Moms 25 %',(labor+matSell+travel+other)*0.25],['Totalt inkl. moms',(labor+matSell+travel+other)*1.25]];
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(summary),'Summering');
     return new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   }
