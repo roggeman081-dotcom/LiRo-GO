@@ -17,7 +17,7 @@
   document.head.appendChild(style);
 
   function materialMatchV61(m,jobId,eNr,kind){
-    return !!m && m.jobId===jobId && m.eNr===eNr && (m.kind||'used')===(kind||'used');
+    return !!m && m.jobId===jobId && m.eNr===eNr && (m.kind||'used')===(kind||'used') && (!window.LiRoMaterialPricing||LiRoMaterialPricing.matchesCurrent(m,jobById(jobId)));
   }
 
   function parseQtyV123(v){
@@ -35,6 +35,10 @@
     if(!jobId||!row||!row[0]) return 0;
 
     const existing=jobMaterials.find(m=>materialMatchV61(m,jobId,row[0],kind));
+    if(existing&&window.LiRoMaterialPricing){
+      const saved=await LiRoMaterialPricing.updateQuantity(existing.id,Number(delta)||0,true);
+      return saved?.qty||0;
+    }
     if(existing){
       const newQty=Math.max(0,(Number(existing.qty)||0)+(Number(delta)||0));
       if(newQty<=0){
@@ -63,6 +67,10 @@
     if(!jobId||!row||!row[0]||qty==null) return 0;
     const existing=jobMaterials.find(m=>materialMatchV61(m,jobId,row[0],kind));
 
+    if(existing&&window.LiRoMaterialPricing){
+      const saved=await LiRoMaterialPricing.updateQuantity(existing.id,qty);
+      return saved?.qty||0;
+    }
     if(qty<=0){
       if(existing){
         await deleteMaterial(existing.id);
@@ -168,7 +176,8 @@
     const base=(Math.max(0,toNumber(m.qty,0))*Math.max(0,toNumber(m.unitPrice,0)));
     const customer=Math.max(0,toNumber(m.qty,0))*materialSellingUnitPrice(m,job.markupPercent);
     const customerEl=row.querySelector('.mat-customer-val');
-    if(customerEl && customerEl.textContent!==fmtKr(customer)) customerEl.textContent=fmtKr(customer);
+    const customerText=window.LiRoMaterialPricing?.money(customer)||fmtKr(customer);
+    if(customerEl && customerEl.textContent!==customerText) customerEl.textContent=customerText;
     if(row.querySelector('[data-act="edit-material-selling"]')) return;
 
     const markupVal=row.querySelector('.mat-markup-val');

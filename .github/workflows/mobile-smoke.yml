@@ -79,7 +79,7 @@ jobs:
           const desktop = fs.readFileSync('desktop-v92.js','utf8');
           if (!desktop.includes('liro-desktop-home') || !desktop.includes('@media (min-width:900px)')) throw new Error('Desktop-layouten saknas');
           const nav = fs.readFileSync('nav-v56.js','utf8');
-          if (!nav.includes("mainActs=new Set(['nav-home','nav-projects','open-radar','open-settings'])") || !nav.includes("st={view:'home'}")) throw new Error('Huvudmenyn byter inte sektion direkt');
+          for(const action of ['nav-customers','nav-projects','nav-work','nav-billing','nav-home','open-radar','open-settings']) if(!nav.includes(action)) throw new Error('Huvudmenyn saknar '+action);
           const stats94 = fs.readFileSync('stats-v94.js','utf8');
           if (!stats94.includes('Statistik & rapporter') || !stats94.includes('stats94-kpis') || !stats94.includes('Exportera CSV')) throw new Error('Fördjupad statistik v94 saknas');
           if (!html.includes('src="./stats-v94.js"')) throw new Error('stats-v94.js laddas inte av index.html');
@@ -123,7 +123,7 @@ jobs:
       - name: Install Playwright and static server
         run: |
           npm init -y >/dev/null 2>&1
-          npm install playwright@latest http-server@latest
+          npm install playwright@1.62.1 http-server@latest
           npx playwright install --with-deps webkit
 
       - name: Run iPhone-like WebKit regression flow
@@ -160,7 +160,7 @@ jobs:
             await pwa.locator('[data-act="new-job"]').first().waitFor({ state:'visible', timeout:10000 });
 
             const body = await pwa.locator('body').innerText();
-            for (const act of ['nav-home','nav-projects','open-radar','open-settings']) {
+            for (const act of ['nav-customers','nav-projects','nav-work','nav-billing']) {
               if (await pwa.locator(`.bottomnav [data-act="${act}"]`).count() !== 1) {
                 throw new Error('Bottenmeny saknar action ' + act);
               }
@@ -172,7 +172,7 @@ jobs:
             await pwa.locator('[data-act="open-stats-v44"]').first().click();
             await pwa.getByText('Statistik & rapporter', { exact:true }).waitFor({ state:'visible', timeout:5000 });
             if (await pwa.locator('.stats94-kpi').count() !== 6) throw new Error('Mobil statistik saknar sex KPI:er');
-            await pwa.locator('.bottomnav [data-act="nav-home"]').click();
+            await pwa.locator('.workflow-tools [data-act="nav-home"]').click();
             await pwa.waitForFunction(() => st.view==='home' && !settingsOpen, null, {timeout:5000});
 
             const swState = await pwa.evaluate(async () => {
@@ -390,7 +390,7 @@ jobs:
               st.settingsTab='calendar';
               render();
             });
-            await page.locator('.bottomnav [data-act="nav-home"]').click();
+            await page.locator('.workflow-tools [data-act="nav-home"]').click();
             const homeState = await page.evaluate(() => ({view:st.view,settingsOpen,calendarOpen,tab:st.settingsTab||null}));
             if (homeState.view!=='home' || homeState.settingsOpen || homeState.calendarOpen || homeState.tab) {
               throw new Error('Hem stängde inte paneler direkt: '+JSON.stringify(homeState));
@@ -432,7 +432,7 @@ jobs:
               throw new Error('Desktop-statistik använder inte full arbetsyta: '+JSON.stringify(statsDesktop));
             }
 
-            await page.locator('.bottomnav [data-act="nav-home"]').click();
+            await page.locator('.workflow-tools [data-act="nav-home"]').click();
             await page.evaluate(() => { calendarOpen=true; render(); });
             await page.getByText('Kalender', { exact:true }).first().waitFor({state:'visible',timeout:5000});
             const calDesktop=await page.evaluate(()=>{
@@ -449,10 +449,10 @@ jobs:
             if (projectNavState.view!=='projects' || projectNavState.settingsOpen || projectNavState.calendarOpen || projectNavState.matPanel) {
               throw new Error('Uppdrag-knappen lämnade ett gammalt lager öppet: '+JSON.stringify(projectNavState));
             }
-            await page.locator('.bottomnav [data-act="open-settings"]').click();
+            await page.locator('.workflow-tools [data-act="open-settings"]').click();
             const settingsState = await page.evaluate(() => ({view:st.view,settingsOpen}));
             if (settingsState.view!=='home' || !settingsState.settingsOpen) throw new Error('Mer öppnades inte rent: '+JSON.stringify(settingsState));
-            await page.locator('.bottomnav [data-act="open-radar"]').click();
+            await page.locator('.workflow-tools [data-act="open-radar"]').click();
             const radarState = await page.evaluate(() => ({view:st.view,settingsOpen}));
             if (radarState.view!=='radar' || radarState.settingsOpen) throw new Error('Radar stängde inte Inställningar direkt: '+JSON.stringify(radarState));
 
@@ -544,3 +544,8 @@ jobs:
         run: node tests/barcode-scanner.cjs
 
 
+
+      - name: Verify customer and project markup inheritance without repricing history
+        run: |
+          node --test tests/customer-pricing.cjs tests/service-worker-isolation.cjs tests/job-pricing-mode.cjs tests/customer-pricing-browser.cjs
+          node tests/customer-workflow.cjs
