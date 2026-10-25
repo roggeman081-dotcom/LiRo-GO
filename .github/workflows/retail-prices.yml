@@ -10,7 +10,17 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # Agentön: statusrapport till ön. Saknas hemligheten hoppas rapporten över tyst.
+      AGENTON_URL: https://awqfvvxbtchfdzrgunby.supabase.co/functions/v1/agent-status
+      AGENTON_TOKEN: ${{ secrets.AGENTON_TOKEN }}
     steps:
+      - name: "Agentön: börjar jobba"
+        continue-on-error: true
+        run: |
+          [ -z "$AGENTON_TOKEN" ] && exit 0
+          curl -sS -m 10 -X POST "$AGENTON_URL" -H "x-agent-token: $AGENTON_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"id":"prisvakten","hut":"jobb","name":"Prisvakten","status":"work","task":"Hämtar dagens grossistpriser"}' || true
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -18,6 +28,7 @@ jobs:
       - run: node tests/retail-parser.mjs
       - run: node scripts/update-retail-prices.mjs
       - name: Publish refreshed price feed
+        id: publish
         run: |
           if ! git diff --quiet -- retail-prices.json; then
             git config user.name 'github-actions[bot]'
@@ -25,4 +36,23 @@ jobs:
             git add retail-prices.json
             git commit -m 'Refresh verified retail prices'
             git push
+            echo "msg=Priser uppdaterade $(TZ=Europe/Stockholm date +'%-d/%-m %H:%M')" >> "$GITHUB_OUTPUT"
+          else
+            echo "msg=Priser kollade $(TZ=Europe/Stockholm date +'%-d/%-m %H:%M'), inga ändringar" >> "$GITHUB_OUTPUT"
           fi
+      - name: "Agentön: klar"
+        if: success()
+        continue-on-error: true
+        env:
+          MSG: ${{ steps.publish.outputs.msg }}
+        run: |
+          [ -z "$AGENTON_TOKEN" ] && exit 0
+          curl -sS -m 10 -X POST "$AGENTON_URL" -H "x-agent-token: $AGENTON_TOKEN" -H 'Content-Type: application/json' \
+            -d "{\"id\":\"prisvakten\",\"status\":\"idle\",\"task\":\"$MSG\"}" || true
+      - name: "Agentön: behöver dig"
+        if: failure()
+        continue-on-error: true
+        run: |
+          [ -z "$AGENTON_TOKEN" ] && exit 0
+          curl -sS -m 10 -X POST "$AGENTON_URL" -H "x-agent-token: $AGENTON_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"id":"prisvakten","status":"need","task":"Prisuppdateringen misslyckades. Kolla GitHub Actions i LiRo-GO"}' || true
