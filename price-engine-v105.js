@@ -192,8 +192,8 @@
       baseRows:result.rows,priced:result.priced,missingBase:result.missingBase,
       missingClass:result.missingClass,missingArticles:result.missingArticles};
     await dbSet(META_ID,meta);
-    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
-    try{if(typeof render==='function') render();}catch{}
+    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) await resolveMissingRows(jobMaterials);
+    try{if(typeof render==='function'&&!st?.dictatingKey) render();}catch{}
     return result;
   }
 
@@ -206,7 +206,7 @@
       if(m&&typeof m==='object') meta=m;
       pricesLoaded=true;
       if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,false);
-      try{if(typeof render==='function') render();}catch{}
+      try{if(typeof render==='function'&&!st?.dictatingKey) render();}catch{}
     }catch(err){
       console.warn('Kunde inte läsa lokala Ahlsell-priser',err);
     }})();
@@ -253,8 +253,8 @@
     contract=null;
     meta=nextMeta;
     pricesLoaded=true;
-    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) syncRows(jobMaterials,true);
-    try{if(typeof render==='function') render();}catch{}
+    if(typeof jobMaterials!=='undefined'&&Array.isArray(jobMaterials)) await resolveMissingRows(jobMaterials);
+    try{if(typeof render==='function'&&!st?.dictatingKey) render();}catch{}
     return {priced:count};
   }
 
@@ -275,21 +275,43 @@
     return Array.isArray(meta.missingArticles)&&meta.missingArticles.includes(key);
   }
   function rowPrice(row){return row&&row[0]?byArt(row[0]):null;}
-  function unitPrice(m){if(!m)return 0;if(m.eNr)return byArt(m.eNr)||0;return Math.max(0,sv(m.unitPrice,0));}
-
+  // Registered materials use their saved cost, including legacy/backup rows.
+  function unitPrice(m){return Math.max(0,sv(m?.unitPrice,0));}
+  async function resolveMissingRows(rows){
+    const candidates=(Array.isArray(rows)?rows:[]).filter(m=>m?.id&&m.eNr&&m.priceMissing===true);
+    if(!pricesLoaded||!candidates.length||typeof DB==='undefined'||!DB)return 0;
+    const updated=[];
+    await new Promise((resolve,reject)=>{
+      const transaction=DB.transaction('materials','readwrite'),store=transaction.objectStore('materials');
+      for(const candidate of candidates){
+        const request=store.get(candidate.id);
+        request.onsuccess=()=>{
+          const saved=request.result;
+          if(!saved||saved.priceMissing!==true||saved.approved===true||saved.approvedAt||window.LiRoMaterialPricing?.locked(jobById(saved.jobId)))return;
+          const price=byArt(saved.eNr);if(price==null)return;
+          const next={...saved,unitPrice:price,priceMissing:false};
+          store.put(next);updated.push(next);
+        };
+      }
+      transaction.oncomplete=resolve;
+      transaction.onerror=()=>reject(transaction.error||new Error('Inköpspriset kunde inte sparas.'));
+      transaction.onabort=()=>reject(transaction.error||new Error('Sparningen av inköpspriset avbröts.'));
+    });
+    for(const row of rows){const saved=updated.find(m=>m.id===row.id);if(saved)Object.assign(row,saved);}
+    return updated.length;
+  }
+  // Rendering must never change saved prices or create unawaited writes.
   function syncRows(rows,persist=false){
-    if(!pricesLoaded) return 0;
     let changed=0;
-    for(const m of (Array.isArray(rows)?rows:[])){
-      if(!m?.eNr) continue;
-      const p=byArt(m.eNr);
-      if(Number(m.unitPrice)===(p||0) && m.priceMissing===(p==null)) continue;
-      m.unitPrice=p||0;
-      m.priceMissing=p==null;
-      changed++;
-      if(persist && m.id && typeof dbPut==='function') Promise.resolve(dbPut('materials',m)).catch(()=>{});
+    // Unsaved catalogue previews still validate against the private price list.
+    // Registered rows (including old backups) always retain their saved cost.
+    for(const row of Array.isArray(rows)?rows:[]){
+      if(!row?.eNr||row.id!=null||row.jobId!=null)continue;
+      const price=byArt(row.eNr);
+      if(row.unitPrice!==(price||0)||row.priceMissing!==(price==null))changed++;
+      row.unitPrice=price||0;row.priceMissing=price==null;
     }
-    return changed;
+    return persist?resolveMissingRows(rows).then(count=>count+changed):changed;
   }
 
   function statusHtml(){
@@ -384,7 +406,7 @@
         const r=await importBaseFile(file);
         if(typeof flash==='function') flash(`Priser klara: ${r.priced.toLocaleString('sv-SE')} artiklar`);
       }
-      try{if(typeof render==='function') render();}catch{}
+      try{if(typeof render==='function'&&!st?.dictatingKey) render();}catch{}
     }catch(err){
       console.error(err);
       setImportStatus('Importen misslyckades: '+(err?.message||'Filen kunde inte läsas'));
@@ -405,6 +427,7 @@
     resolveRow:rowPrice,
     missingInSource,
     syncRows,
+    resolveMissingRows,
     importAgreementFile,
     importBaseFile,
     parsePreparedPrices,
